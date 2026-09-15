@@ -1,0 +1,29 @@
+## .NET / MSBuild
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.binlog
+docs/
+
+## Publish output
+publish/
+PublishOutput/
+Artifacts/
+
+## Native AOT diagnostics (produced by the publish profiles)
+*.mstat
+*.dgml
+*.ni.exe
+
+## Collapse plugin catalog indexer (external tool, bring your own copy)
+Indexer.exe
+
+## Rider / VS Code
+.idea/
+.vscode/
+
+## Local scratch (analysis workspace, reference clones, extracted launcher payloads)
+.workbuddy-ai/tmp/
+.workbuddy-ai/plans/

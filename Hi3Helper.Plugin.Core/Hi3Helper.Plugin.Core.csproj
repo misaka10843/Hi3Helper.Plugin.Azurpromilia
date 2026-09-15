@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Platforms>x64</Platforms>
+    <LangVersion>preview</LangVersion>
+    <DebugType>embedded</DebugType>
+    <Deterministic>true</Deterministic>
+    <NoWarn>$(NoWarn);CA2256</NoWarn>
+    <Configurations>Debug;Release;DebugNoReflection;ReleaseNoReflection</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="PluginTest\**" />
+    <EmbeddedResource Remove="PluginTest\**" />
+    <None Remove="PluginTest\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='DebugNoReflection'">
+    <DefineConstants>$(DefineConstants);DEBUG;USELIGHTWEIGHTJSONPARSER;MANUALCOM</DefineConstants>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseNoReflection'">
+    <DefineConstants>$(DefineConstants);USELIGHTWEIGHTJSONPARSER;MANUALCOM</DefineConstants>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+</Project>
