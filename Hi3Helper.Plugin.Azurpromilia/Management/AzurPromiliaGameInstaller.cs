@@ -14,31 +14,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management;
 
-/// <summary>
-/// Installer for Azur Promilia.
-/// <para>
-/// Fresh installs follow the server's <c>downloadMode</c>: SLICE downloads numbered fragments into
-/// <c>_temp</c>, concatenates them into <c>game.zip</c> and extracts it; REALITY writes the final
-/// files straight into the game directory. Updates are always file-level, driven by the REALITY index,
-/// which is why a SLICE install also caches that index for later diffs.
-/// </para>
-/// </summary>
 [GeneratedComClass]
 internal partial class AzurPromiliaGameInstaller : GameInstallerBase
 {
-    /// <summary>Default number of concurrent file downloads.</summary>
     internal const int DefaultConcurrency = 4;
-
-    /// <summary>Concurrency used once a network error has been observed.</summary>
     internal const int DegradedConcurrency = 2;
-
-    /// <summary>Concurrency used after repeated network errors.</summary>
     internal const int MinimumConcurrency = 1;
-
-    /// <summary>Suffix of partially downloaded files.</summary>
     internal const string TempFileSuffix = ".~tmp";
-
-    /// <summary>Maximum number of per-file retries before the whole install is failed.</summary>
     internal const int MaxFileRetries = 4;
 
     private readonly HttpClient _downloadHttpClient;
@@ -185,9 +167,6 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Fetches and parses the REALITY (per-file) index for a release, returning the cached path too.
-    /// </summary>
     internal async Task<(AzurPromiliaGameIndex? Index, string? Path)> FetchRealityIndexAsync(
         GameReleaseInfo release, CancellationToken token)
     {
@@ -212,12 +191,6 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
     }
 
     internal HttpClient DownloadHttpClient => _downloadHttpClient;
-
-    /// <summary>
-    /// The effective channel configuration. Read through the game manager rather than kept as a field,
-    /// because the manager re-resolves it once the game directory (and with it <c>account.json</c>,
-    /// which may carry <c>launcherRoot</c>) becomes known.
-    /// </summary>
     internal AzurPromiliaChannelConfig Channel => Manager.Channel;
 
     public override void Dispose()

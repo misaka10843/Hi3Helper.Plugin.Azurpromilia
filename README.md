@@ -17,165 +17,9 @@ incremental updates and game launching.
 
 ---
 
-## ⚠️ Read this first: you must supply your own login
+## Public downloads
 
-Azur Promilia will not hand out download URLs to an anonymous client. The official launcher logs you
-in through a **web flow guarded by GeTui / Geetest-style CAPTCHAs**, which a launcher plugin has no way
-to host.
-
-So this plugin does **not** try to automate login. Instead it reads credentials from a plain JSON file
-that **you** control — and that file lives **in the game folder**, right where you already browse:
-
-```
-<game install folder>\account.json
-```
-
-A template is written there automatically the first time the launcher tells the plugin where the game
-is installed. Fill in **one** of the strategies below, then restart the launcher.
-
-### Where exactly does the plugin look?
-
-**The game install folder, and nowhere else:**
-
-```
-<game install folder>\account.json
-```
-
-There is no copy under `%LOCALAPPDATA%`, and the plugin does not read one even if you happen to have
-left a file there — that location is deliberately not used, precisely because it is hard to find.
-
-Two details worth knowing:
-
-* The plugin **does not write anything until it knows the game folder**. On a brand-new setup you will
-  see nothing until you have pointed Collapse at the game directory once.
-* Every run logs the file it used (`[AzurPromilia] Loaded account configuration from '...'`), so if you
-  ever lose track of it, the launcher log will tell you. Deleting the file and restarting regenerates
-  the template.
-
-### Strategy 1 — paste an existing token (simplest)
-
-```json
-{
-  "utoken": "<your session token>",
-  "uid": "<your account id>",
-  "accountType": 2
-}
-```
-
-This never needs your password. `uid` and `accountType` are refreshed automatically once a login
-succeeds; you only have to get `utoken` right.
-
-### Strategy 2 — reuse the official launcher's token (default, `true`)
-
-```json
-{
-  "importFromOfficialLauncher": true
-}
-```
-
-If you have the official launcher installed and logged in **on the same machine**, the plugin decrypts
-the token it already stored locally and reuses it. No credentials required. This is on by default, so
-in the happy path you do not need to edit the file at all.
-
-### Strategy 3 — account + password
-
-```json
-{
-  "account": "13800000000",
-  "password": "your-password",
-  "accountType": 2
-}
-```
-
-`account` may be a phone number or an e-mail address. The password is encrypted with the launcher's
-own `extApi4` scheme before being sent, and is **never** written back to disk — after the first
-successful login the plugin strips the `password` field from the file for you.
-
-### Strategy 4 — phone + SMS code
-
-```json
-{
-  "phone": "13800000000",
-  "smsCode": "123456"
-}
-```
-
-Because this plugin cannot display the SMS challenge, you must obtain the code yourself (e.g. from the
-official launcher or the official website) and paste it in. SMS codes expire quickly, so this strategy
-is mostly useful for one-off setup.
-
-### If login fails, read the error code before touching your credentials
-
-The passport API answers `code=2, "MD5校验错误"` when the **request signature** does not verify. That
-message has nothing to do with your password — the request is rejected before the server ever looks at
-the account. Treat the codes as follows:
-
-| Server answer | Meaning | What to do |
-| --- | --- | --- |
-| `code=2` `MD5校验错误` | The plugin built the signed request wrongly | **Plugin bug.** Report it — your credentials are not the problem. |
-| HTTP `404` | The request went to the wrong domain | Login must go to `passport-grp.manjuu.com`, not the business domain. Also a plugin bug. |
-| `code=11017` `通行证不存在` | Signature accepted; the account does not exist | Check the `account` value in `account.json`. |
-| Any other `code` | Signature accepted; genuine business rejection | The `msg` field is authoritative — wrong password, risk control, ban, etc. |
-
-So: **any error other than `code=2`/`404` means the signature is fine and the problem really is the
-account.** The plugin now logs `code=2` as an explicit error rather than a generic "no usable session"
-warning, precisely so this distinction is obvious.
-
-### Optional: `launcherRoot`
-
-```json
-{
-  "launcherRoot": "D:\\Games\\AzurPromiliaLauncher"
-}
-```
-
-Points at the official launcher's install directory (the one containing `res/app_config.dat`). Set this
-if the plugin cannot auto-detect the launcher and you want it to re-read the current channel keys
-instead of using the values compiled into the plugin.
-
-### Full template
-
-```json
-{
-  "utoken": null,
-  "uid": null,
-  "accountType": null,
-  "account": null,
-  "password": null,
-  "phone": null,
-  "smsCode": null,
-  "importFromOfficialLauncher": true,
-  "launcherRoot": null,
-  "_readme": "Fill in ONE strategy. See README.md."
-}
-```
-
-The file lives in the game install folder and nowhere else — see
-[Where exactly does the plugin look?](#where-exactly-does-the-plugin-look).
-
-### Verifying the lookup logic and the request signature
-
-The rules above are covered by a runnable smoke test:
-
-```bash
-./run-account-test.sh          # offline: 33 assertions
-./run-account-test.sh --live   # also drives the real API client against the live server
-```
-
-Offline it exercises a real `AzurPromiliaAccount` against temporary directories — template placement,
-the "nothing before a game path" rule, in-place reload, save target, and the fact that leftover files
-under `%LOCALAPPDATA%` or next to the plugin DLL are ignored — plus known-answer vectors pinning the
-signing formula (`GET` signs the canonical query, `POST` signs the exact JSON body). It prints one
-`PASS`/`FAIL` line per assertion (33 in total).
-
-With `--live` it additionally uses the real `AzurPromiliaApiClient` to call `getLauncherConfig` and
-then `pwdlogin` with a deliberately non-existent account, asserting the server does **not** answer
-`code=2` — i.e. that the signature is accepted and only the account is rejected. That is the
-end-to-end guard against the failure mode described above.
-
-For a lower-level look at the signature scheme itself, `tools/probe/probe_sign.py` replays the same
-requests with several signing variants and prints what the server accepts; see
-[docs/03-网络层与API协议.md](./docs/03-网络层与API协议.md) §9.
+Installation, updates and repair use the public launcher API without a plugin login or an `account.json` file. Existing account files are ignored. Sign in inside the game after launching it.
 
 ---
 
@@ -188,7 +32,7 @@ requests with several signing variants and prints what the server accepts; see
 | Game download & install (SLICE + REALITY) | ✅ |
 | Incremental file-level updates | ✅ |
 | Integrity verification & repair | ✅ |
-| Game launching (session injection) | ✅ |
+| Game launching (sign in inside the game) | ✅ |
 | Process detection / kill | ✅ |
 | Pre-load | ⚠️ implemented, unverified against a real pre-load window |
 | Self-update | ⚠️ URLs are placeholders — see below |
@@ -196,15 +40,7 @@ requests with several signing variants and prints what the server accepts; see
 
 ### How launching works
 
-The game client takes its session **only** from two environment variables, which the plugin injects
-when it starts the process:
-
-| Variable | Contents |
-| --- | --- |
-| `manjuu_user_info` | `{"uid":...,"utoken":...,"accountType":...}` |
-| `manjuu_channel_info` | `{"channelCode":...,"subChannelCode":...,"initTraceId":...,"currentTraceId":...,"previousTraceId":...}` |
-
-No environment variables, no session — the game will bounce you straight back to the login screen.
+The plugin passes channel metadata and an empty user session to the game. Authentication is handled inside the game.
 
 ---
 
@@ -229,6 +65,16 @@ git submodule update --init --recursive
 ```bash
 dotnet build Hi3Helper.Plugin.Azurpromilia.sln -c Release
 ```
+
+### Public download regression check
+
+```bash
+dotnet run --project tests/PublicDownloadTests -c Release
+# Also check anonymous package discovery against the real server:
+dotnet run --project tests/PublicDownloadTests -c Release -- --live
+```
+
+The offline check uses simulated API responses. The live check discovers package URLs; it does not download or launch the full game.
 
 ### Sandboxed / offline build
 
@@ -295,9 +141,7 @@ hosting, or delete the `GetPluginSelfUpdater` override in `Plugin.cs` to disable
    `manifest.json` + `.zip`.
 2. In Collapse: **Settings → Open Plugin Management Menu → Click to add .zip or manifest.json**.
 3. Select the archive and **restart the launcher**.
-4. Point Collapse at (or create) the game folder, then start the launcher once — `account.json` is
-   created **inside that game folder**. Edit it if you are not relying on the official-launcher token
-   import, then restart again.
+4. Point Collapse at (or create) the game folder and start the download. No plugin login is required.
 
 Requires Collapse Launcher `1.83.14` or newer (plugin API v0.1.5 standard).
 
@@ -313,7 +157,7 @@ Hi3Helper.Plugin.Azurpromilia/
 ├─ SelfUpdate.cs                      Plugin self-update source
 ├─ AssemblyInfo.cs                    Assembly-level SupportedOSPlatform("windows")
 ├─ Management/
-│  ├─ AzurPromiliaGameManager.cs      Session bootstrap, version discovery, index download
+│  ├─ AzurPromiliaGameManager.cs      Public version discovery, index download
 │  ├─ AzurPromiliaGameInstaller.cs    Installer surface (size / install / update / repair)
 │  ├─ AzurPromiliaGameInstaller.Install.cs   Download worker pool, SLICE merge, extract, diff
 │  ├─ AzurPromiliaGameIndex.cs        SLICE + REALITY CSV index parsing
@@ -323,18 +167,14 @@ Hi3Helper.Plugin.Azurpromilia/
 │     ├─ AzurPromiliaApiHelper.cs     Signed HTTP client (canonical query + header signature)
 │     ├─ AzurPromiliaApiContext.cs    System.Text.Json source-generation context
 │     ├─ AzurPromiliaApiStructs.cs    Wire-format DTOs
-│     ├─ AzurPromiliaLoginService.cs  utoken / import / password / SMS resolution order
 │     ├─ AzurPromiliaLauncherApiMedia.cs
 │     └─ AzurPromiliaLauncherApiNews.cs
 └─ Utils/
-   ├─ AzurPromiliaCrypto.cs           Recovered extApi1–4 + resource-index cipher
+   ├─ AzurPromiliaCrypto.cs           Request signing + configuration/resource-index ciphers
    ├─ AzurPromiliaChannelConfig.cs    launcherId / appId / channelCode / secretKey resolution
    ├─ AzurPromiliaDeviceInfo.cs       device-id, headers, client-info
-   ├─ AzurPromiliaAccount.cs          account.json credential store (game folder only)
    └─ AzurPromiliaImageData.cs        Embedded plugin artwork
 
-tests/
-└─ AccountResolutionTests/            Console smoke test for the credential-file lookup rules
 ```
 
 The `docs/` directory at the repository root documents the reverse-engineering work behind the

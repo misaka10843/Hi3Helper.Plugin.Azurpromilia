@@ -22,17 +22,10 @@ namespace Hi3Helper.Plugin.AzurPromilia.Management;
 
 internal partial class AzurPromiliaGameInstaller
 {
-    /// <summary>
-    /// A single download unit: either a final game file (REALITY) or a fragment (SLICE).
-    /// </summary>
     private sealed class DownloadItem
     {
         public required string Url { get; init; }
-
-        /// <summary>Path relative to the game root; for fragments this is the fragment file name.</summary>
         public required string RelativePath { get; init; }
-
-        /// <summary>Absolute destination path on disk.</summary>
         public required string LocalPath { get; init; }
 
         public long Size { get; init; }
@@ -40,9 +33,6 @@ internal partial class AzurPromiliaGameInstaller
         public string? Md5 { get; init; }
     }
 
-    /// <summary>
-    /// Drives one install / update / preload operation.
-    /// </summary>
     private sealed class Install
     {
         private readonly AzurPromiliaGameInstaller _owner;
@@ -70,8 +60,7 @@ internal partial class AzurPromiliaGameInstaller
             if (release == null || string.IsNullOrEmpty(release.VersionCode))
             {
                 throw new InvalidOperationException(
-                    "No published game version is available. This usually means the account is not logged in; " +
-                    "provide credentials through the plugin's account.json file.");
+                    "No published game version is available. Check the launcher API response and try again later.");
             }
 
             string installPath = _owner.EnsureAndGetGamePath();
@@ -101,11 +90,6 @@ internal partial class AzurPromiliaGameInstaller
         }
 
         #region SLICE install: fragments -> game.zip -> extract
-
-        /// <summary>
-        /// SLICE install: download every fragment into <c>_temp</c>, concatenate them into
-        /// <c>game.zip</c>, verify the merged archive, extract it into the game root, then clean up.
-        /// </summary>
         private async Task RunSliceInstallAsync(GameReleaseInfo release, string installPath,
             InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate,
             CancellationToken token)
@@ -208,11 +192,6 @@ internal partial class AzurPromiliaGameInstaller
                 }
             }
         }
-
-        /// <summary>
-        /// Concatenates all fragments into <c>game.zip.~tmp</c> in index order, flushes to disk, then
-        /// verifies the merged archive's MD5 before promoting it to <c>game.zip</c>.
-        /// </summary>
         private static async Task MergeFragmentsAsync(AzurPromiliaGameIndex index, string tempPath,
             string gameZipPath, InstallProgressDelegate? progressDelegate, CancellationToken token)
         {
@@ -303,10 +282,6 @@ internal partial class AzurPromiliaGameInstaller
                 ArrayPool<byte>.Shared.Return(buffer);
             }
         }
-
-        /// <summary>
-        /// Extracts <c>game.zip</c> into the game root using the bundled 7-Zip wrapper.
-        /// </summary>
         private static async Task ExtractArchiveAsync(string archivePath, string targetPath,
             InstallProgressDelegate? progressDelegate, CancellationToken token)
         {
@@ -341,11 +316,6 @@ internal partial class AzurPromiliaGameInstaller
             extractProgress.StateCount = 1;
             progressDelegate?.Invoke(in extractProgress);
         }
-
-        /// <summary>
-        /// Downloads the REALITY index into <c>_index/&lt;version&gt;</c> so the next update has a
-        /// per-file baseline to diff against. Failures here are non-fatal.
-        /// </summary>
         private async Task CacheRealityIndexAsync(GameReleaseInfo release, string installPath,
             CancellationToken token)
         {
@@ -374,10 +344,6 @@ internal partial class AzurPromiliaGameInstaller
         #endregion
 
         #region REALITY install / update: per-file download
-
-        /// <summary>
-        /// File-level install or update driven by the REALITY index.
-        /// </summary>
         private async Task RunFileInstallAsync(GameReleaseInfo release, string installPath, bool isFreshInstall,
             GameInstallerKind kind, InstallProgressDelegate? progressDelegate,
             InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
@@ -434,10 +400,6 @@ internal partial class AzurPromiliaGameInstaller
                     "[AzurPromiliaInstaller] Index cache not present at '{Path}'.", indexPath);
             }
         }
-
-        /// <summary>
-        /// Builds the set of paths the server asked to preserve across updates.
-        /// </summary>
         private static HashSet<string> BuildExclusionSet(GameReleaseInfo release)
         {
             HashSet<string> excluded = new(StringComparer.OrdinalIgnoreCase);
@@ -457,15 +419,6 @@ internal partial class AzurPromiliaGameInstaller
 
             return excluded;
         }
-
-        /// <summary>
-        /// Determines which files need downloading and which previously installed files became obsolete.
-        /// <para>
-        /// A file is downloaded when it is missing locally, when its size differs, or when its MD5 does
-        /// not match. When a previous manifest exists the hash comparison is trusted first, so a file
-        /// whose hash is unchanged is only re-hashed if its size changed.
-        /// </para>
-        /// </summary>
         private static (List<DownloadItem> ToDownload, List<string> Obsolete) ComputeFileDiff(
             AzurPromiliaGameIndex index,
             AzurPromiliaLocalManifest? previousManifest,
@@ -576,10 +529,6 @@ internal partial class AzurPromiliaGameInstaller
                 }
             }
         }
-
-        /// <summary>
-        /// Re-hashes every indexed file and re-downloads the ones that fail, once.
-        /// </summary>
         private async Task VerifyAndRepairAsync(AzurPromiliaGameIndex index, string installPath,
             InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate,
             CancellationToken token)
@@ -660,12 +609,6 @@ internal partial class AzurPromiliaGameInstaller
         #endregion
 
         #region Download engine
-
-        /// <summary>
-        /// Downloads a batch of items with bounded concurrency, resumable transfers and per-file MD5
-        /// verification. Concurrency degrades from 4 to 2 to 1 as network errors accumulate, matching
-        /// the official launcher's behaviour.
-        /// </summary>
         private async Task DownloadFilesAsync(List<DownloadItem> items,
             InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate,
             CancellationToken token)
@@ -743,11 +686,6 @@ internal partial class AzurPromiliaGameInstaller
                 }
             }
         }
-
-        /// <summary>
-        /// Downloads one item with resumable HTTP range requests and MD5 verification.
-        /// </summary>
-        /// <returns><c>true</c> on success; <c>false</c> for a retryable network failure.</returns>
         private async Task<bool> DownloadItemAsync(DownloadItem item, Action<long> reportDelta,
             CancellationToken token)
         {
@@ -904,10 +842,6 @@ internal partial class AzurPromiliaGameInstaller
 
             File.Move(tempPath, finalPath);
         }
-
-        /// <summary>
-        /// Throttles progress callbacks to at most ten per second so the launcher UI is not flooded.
-        /// </summary>
         private void ReportProgress(InstallProgressDelegate? progressDelegate, in InstallProgress progress)
         {
             long now = Stopwatch.GetTimestamp();

@@ -5,11 +5,6 @@ using Hi3Helper.Plugin.Core.Management;
 
 namespace Hi3Helper.Plugin.AzurPromilia;
 
-/// <summary>
-/// Native export surface. The launcher resolves every plugin entry point through
-/// <c>TryGetApiExport</c>, which forwards to the shared export table populated by
-/// <see cref="SharedStaticV1Ext{T}"/>.
-/// </summary>
 public partial class Exports : SharedStaticV1Ext<Exports>
 {
     static Exports()

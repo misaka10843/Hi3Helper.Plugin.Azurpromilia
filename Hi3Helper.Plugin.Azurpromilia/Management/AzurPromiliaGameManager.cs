@@ -16,51 +16,18 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management;
 
-/// <summary>
-/// Game manager for Azur Promilia.
-/// <para>
-/// Responsibilities: resolve the channel configuration, establish a session, discover the published
-/// version, download and decrypt resource indexes, and keep a local file manifest for incremental
-/// updates.
-/// </para>
-/// <para>
-/// Installation modes (<c>downloadMode</c>): <c>1</c> = SLICE (fragment merge + extraction),
-/// <c>2</c> = REALITY (per-file download).
-/// </para>
-/// </summary>
 [GeneratedComClass]
 internal partial class AzurPromiliaGameManager : GameManagerBase
 {
-    /// <summary>Package type of the SLICE (fragmented) index.</summary>
     internal const int PackageTypeSlice = 1;
-
-    /// <summary>Package type of the REALITY (full) index.</summary>
     internal const int PackageTypeReality = 2;
-
-    /// <summary>Download mode reported by the server: fragmented install.</summary>
     internal const int DownloadModeSlice = 1;
-
-    /// <summary>Download mode reported by the server: per-file install.</summary>
     internal const int DownloadModeReality = 2;
-
-    /// <summary>Name of the plugin's own manifest inside <c>_index</c>.</summary>
     internal const string LocalManifestFileName = "azurpromilia-manifest.json";
-
-    /// <summary>Name of the launcher's own version marker inside <c>_index</c>.</summary>
     internal const string LauncherVersionFileName = "version";
 
-    private readonly AzurPromiliaAccount _account;
     private readonly string _gameExecutableNameByPreset;
-
-    /// <summary>
-    /// The channel configuration. Not <c>readonly</c>: it is re-resolved once the game directory is
-    /// known, because <c>account.json</c> (which may carry <c>launcherRoot</c>) lives in the game
-    /// folder and that folder is only reported after this manager has already been constructed.
-    /// </summary>
-    private AzurPromiliaChannelConfig _channel;
-
-    /// <summary>The <c>launcherRoot</c> value <see cref="_channel"/> was resolved with.</summary>
-    private string? _launcherRootHint;
+    private readonly AzurPromiliaChannelConfig _channel;
 
     private AzurPromiliaApiClient? _apiClient;
     private GameReleaseInfo? _released;
@@ -70,13 +37,10 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     private bool? _isInstalledCache;
 
     internal AzurPromiliaGameManager(string gameExecutableNameByPreset,
-        AzurPromiliaChannelConfig channel,
-        AzurPromiliaAccount account)
+        AzurPromiliaChannelConfig channel)
     {
         _gameExecutableNameByPreset = gameExecutableNameByPreset;
         _channel = channel;
-        _account = account;
-        _launcherRootHint = account.LauncherRoot;
 
         ApiResponseHttpClient = new PluginHttpClientBuilder()
             .SetAllowedDecompression(DecompressionMethods.All)
@@ -91,41 +55,15 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     }
 
     #region Published state
-
-    /// <summary>The published (released) version, or <c>null</c> before initialisation.</summary>
     internal GameReleaseInfo? Released => _released;
-
-    /// <summary>The pre-download (upcoming) version, when the server publishes one.</summary>
     internal GameReleaseInfo? Preload => _preload;
-
-    /// <summary>Server-reported installation mode.</summary>
     internal int DownloadMode { get; private set; } = DownloadModeSlice;
-
-    /// <summary>Relative path of the executable that starts the game.</summary>
     internal string? LaunchEntry { get; private set; }
-
-    /// <summary>Command line arguments the server wants passed to the game.</summary>
     internal string? LaunchParams { get; private set; }
-
-    /// <summary>Default folder name for the game installation.</summary>
     internal string? GameFolderName { get; private set; }
-
-    /// <summary>The authenticated session, once established.</summary>
-    internal LoginUserInfo? Session { get; private set; }
-
-    /// <summary>The API client, available after initialisation.</summary>
     internal AzurPromiliaApiClient? ApiClient => _apiClient;
-
-    /// <summary>The effective channel configuration.</summary>
     internal AzurPromiliaChannelConfig Channel => _channel;
-
-    /// <summary>Local version code recorded by the plugin or the official launcher.</summary>
     internal string? LocalVersionCode => _localVersionCode;
-
-    /// <summary>
-    /// The executable name that <see cref="IsInstalled"/> probes when the server has not yet told us
-    /// the real launch entry.
-    /// </summary>
     internal string GameExecutableNameByPreset => _gameExecutableNameByPreset;
 
     #endregion
@@ -224,11 +162,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     #endregion
 
     #region Initialisation
-
-    /// <summary>
-    /// Performs the full discovery sequence: channel config -> launcher config -> login ->
-    /// version config -> launch entry.
-    /// </summary>
     internal async Task<int> InitAsyncInner(bool forceInit = false, CancellationToken token = default)
     {
         if (!forceInit && _isInitialized)
@@ -236,14 +169,11 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
             return 0;
         }
 
-        ResolveCredentialContext();
         ReadLocalGameVersion();
 
         try
         {
             EnsureApiClient();
-            await FetchLauncherConfigAsync(token).ConfigureAwait(false);
-            await EstablishSessionAsync(token).ConfigureAwait(false);
             await FetchGameVersionConfigAsync(token).ConfigureAwait(false);
             await FetchLaunchEntryAsync(token).ConfigureAwait(false);
 
@@ -265,53 +195,10 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    /// <summary>
-    /// Ensures initialisation has run and returns the API client, or <c>null</c> when the client
-    /// could not be created.
-    /// </summary>
     internal async Task<AzurPromiliaApiClient?> EnsureApiClientAsync(CancellationToken token)
     {
         await InitAsyncInner(false, token).ConfigureAwait(false);
         return _apiClient;
-    }
-
-    /// <summary>
-    /// Re-reads <c>account.json</c> and re-resolves the channel configuration now that the game
-    /// directory is known.
-    /// <para>
-    /// The credential file lives in the game folder by default, but that folder is only handed to the
-    /// plugin by <see cref="SetGamePathInner"/> — which runs <i>after</i> the preset config has already
-    /// constructed this manager (and therefore after the channel config was first resolved). Credential
-    /// resolution consequently has to be re-run here rather than in the constructor.
-    /// </para>
-    /// </summary>
-    private void ResolveCredentialContext()
-    {
-        bool sourceChanged = _account.TryLoadFrom(CurrentGameInstallPath);
-        if (sourceChanged && !string.IsNullOrEmpty(_account.SourcePath))
-        {
-            SharedStatic.InstanceLogger.LogInformation(
-                "[AzurPromiliaGameManager] Credentials are read from '{Path}'.", _account.SourcePath);
-        }
-
-        // 'launcherRoot' can name a different official launcher than the one auto-detection picked while
-        // the channel config was first resolved, so rebuild the channel (and the client that captured
-        // it) whenever the value actually changed.
-        string? hint = _account.LauncherRoot;
-        if (string.Equals(hint ?? string.Empty, _launcherRootHint ?? string.Empty, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        _launcherRootHint = hint;
-        _channel = AzurPromiliaChannelConfig.Resolve(hint);
-
-        _apiClient?.Dispose();
-        _apiClient = null;
-
-        SharedStatic.InstanceLogger.LogInformation(
-            "[AzurPromiliaGameManager] Channel configuration re-resolved (launcherRoot='{Root}').",
-            hint ?? "(auto-detect)");
     }
 
     private void EnsureApiClient()
@@ -342,72 +229,13 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
             _channel.LauncherId, _channel.AppId, _channel.ChannelCode);
     }
 
-    /// <summary>
-    /// <c>getLauncherConfig</c> — yields the failover domains and the password-encryption key.
-    /// </summary>
-    private async Task FetchLauncherConfigAsync(CancellationToken token)
-    {
-        AzurPromiliaApiClient api = _apiClient!;
-
-        Dictionary<string, string?> query = new() { ["launcherId"] = _channel.LauncherId };
-
-        LauncherConfigData? data = await api
-            .GetAsync(api.BaseDomains, "/pc-launcher/client/launcher/config", query,
-                AzurPromiliaApiContext.Default.AzurPromiliaResponseLauncherConfigData, token)
-            .ConfigureAwait(false);
-
-        LauncherInitConfig? initConfig = data?.LauncherInitConfig;
-        if (initConfig == null)
-        {
-            SharedStatic.InstanceLogger.LogWarning(
-                "[AzurPromiliaGameManager] getLauncherConfig returned no launcherInitConfig; keeping the built-in domains.");
-            return;
-        }
-
-        if (initConfig.User?.Domains is { Count: > 0 } userDomains)
-        {
-            api.UserDomains = userDomains;
-        }
-
-        if (initConfig.Compliance?.Domains is { Count: > 0 } complianceDomains)
-        {
-            api.ComplianceDomains = complianceDomains;
-        }
-
-        api.PasswordKey = initConfig.GetPasswordKey();
-
-        SharedStatic.InstanceLogger.LogInformation(
-            "[AzurPromiliaGameManager] Domains resolved. user={UserDomain}, compliance={ComplianceDomain}, pwdKey={HasPwdKey}",
-            api.UserDomains.Count > 0 ? api.UserDomains[0] : "(none)",
-            api.ComplianceDomains.Count > 0 ? api.ComplianceDomains[0] : "(none)",
-            !string.IsNullOrEmpty(api.PasswordKey));
-    }
-
-    private async Task EstablishSessionAsync(CancellationToken token)
-    {
-        Session = await AzurPromiliaLoginService.ResolveAsync(_apiClient!, _account, token).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// <c>getGameVersionConfig</c> — the released/preload versions and the installation mode.
-    /// Requires a valid session because the server keys the response on <c>uid</c>.
-    /// </summary>
     private async Task FetchGameVersionConfigAsync(CancellationToken token)
     {
         AzurPromiliaApiClient api = _apiClient!;
 
-        if (string.IsNullOrEmpty(api.UToken))
-        {
-            SharedStatic.InstanceLogger.LogWarning(
-                "[AzurPromiliaGameManager] Skipping getGameVersionConfig because no session is available. " +
-                "Download and update will be unavailable until credentials are supplied.");
-            return;
-        }
-
         Dictionary<string, string?> query = new()
         {
-            ["launcherId"] = _channel.LauncherId,
-            ["uid"] = api.Uid ?? string.Empty
+            ["launcherId"] = _channel.LauncherId
         };
 
         GameVersionConfigData? data = await api
@@ -436,7 +264,7 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         else
         {
             SharedStatic.InstanceLogger.LogWarning(
-                "[AzurPromiliaGameManager] The server published no released version for this account.");
+                "[AzurPromiliaGameManager] The server published no released version.");
         }
 
         // getGameInfo carries the preload payload when packageconfig omits it.
@@ -466,14 +294,11 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    /// <summary>
-    /// <c>getGameExeInfo</c> — the authoritative launch entry and arguments for the published version.
-    /// </summary>
     private async Task FetchLaunchEntryAsync(CancellationToken token)
     {
         AzurPromiliaApiClient api = _apiClient!;
 
-        if (string.IsNullOrEmpty(api.UToken) || string.IsNullOrEmpty(_released?.VersionCode))
+        if (string.IsNullOrEmpty(_released?.VersionCode))
         {
             return;
         }
@@ -481,8 +306,7 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         Dictionary<string, string?> query = new()
         {
             ["launcherId"] = _channel.LauncherId,
-            ["gameVersionCode"] = _released!.VersionCode!,
-            ["uid"] = api.Uid ?? string.Empty
+            ["gameVersionCode"] = _released!.VersionCode!
         };
 
         GameExeInfoData? data = await api
@@ -503,10 +327,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
             LaunchEntry ?? "(none)", LaunchParams ?? "(none)");
     }
 
-    /// <summary>
-    /// Resolves the local version from the launcher's own <c>_index/version</c> marker, falling back
-    /// to the plugin manifest.
-    /// </summary>
     private void ReadLocalGameVersion()
     {
         if (string.IsNullOrEmpty(CurrentGameInstallPath))
@@ -563,11 +383,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     #endregion
 
     #region Index download & parsing
-
-    /// <summary>
-    /// Downloads a resource index to <paramref name="targetPath"/>, skipping the download when a file
-    /// with the expected size and MD5 is already present.
-    /// </summary>
     internal async Task DownloadIndexAsync(GamePackageInfo package, string targetPath, CancellationToken token)
     {
         if (string.IsNullOrEmpty(package.DownloadUrl))
@@ -618,13 +433,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    /// <summary>
-    /// Downloads and decrypts a resource index.
-    /// </summary>
-    /// <param name="package">Package descriptor carrying the index URL and hash.</param>
-    /// <param name="targetPath">Where the encrypted index is cached on disk.</param>
-    /// <param name="isSlice">Whether to parse the payload as a SLICE index.</param>
-    /// <param name="token">Cancellation token.</param>
     internal async Task<AzurPromiliaGameIndex> LoadIndexAsync(GamePackageInfo package, string targetPath,
         bool isSlice, CancellationToken token)
     {
@@ -637,23 +445,14 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
             : AzurPromiliaGameIndex.ParseGameIndex(csv);
     }
 
-    /// <summary>
-    /// Returns the index file path used for a given version: <c>&lt;game&gt;/_index/&lt;version&gt;</c>.
-    /// </summary>
     internal static string GetIndexPath(string gamePath, string versionCode)
         => Path.Combine(gamePath, "_index", versionCode);
-
-    /// <summary>
-    /// Returns the staging directory used by SLICE installs: <c>&lt;game&gt;/_temp</c>.
-    /// </summary>
     internal static string GetSliceTempPath(string gamePath)
         => Path.Combine(gamePath, "_temp");
 
     #endregion
 
     #region Local manifest
-
-    /// <summary>Reads the plugin's local file manifest from the game directory.</summary>
     internal AzurPromiliaLocalManifest? ReadLocalManifest(string installPath)
     {
         string path = Path.Combine(installPath, "_index", LocalManifestFileName);
@@ -675,7 +474,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    /// <summary>Writes the plugin's local file manifest after a successful install or update.</summary>
     internal void WriteLocalManifest(string installPath, AzurPromiliaGameIndex index, int downloadMode)
     {
         try

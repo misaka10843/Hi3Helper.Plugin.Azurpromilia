@@ -17,18 +17,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management.Api;
 
-/// <summary>
-/// News / announcement provider, backed by <c>getNews</c>.
-/// <para>
-/// The server returns a <c>txtContentMap</c> of content lists keyed by content id. The exact set of
-/// ids is not contractual, so every list is flattened in order and the entry type is inferred from the
-/// id and any label text present.
-/// </para>
-/// </summary>
 [GeneratedComClass]
 public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
 {
-    /// <summary>Content ids that carry promotional banners rather than articles.</summary>
     private static readonly HashSet<string> CarouselContentIds = new(StringComparer.OrdinalIgnoreCase)
     {
         "2", "4", "5", "6", "7", "8", "9", "10", "11"
@@ -196,11 +187,6 @@ public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
     public override void GetSocialMediaEntries(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)
         => InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
-
-    /// <summary>
-    /// Formats a timestamp as <c>yyyy-MM-dd</c>. Accepts either an epoch value in seconds or
-    /// milliseconds, or an ISO-8601 string.
-    /// </summary>
     private static string? FormatDate(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
