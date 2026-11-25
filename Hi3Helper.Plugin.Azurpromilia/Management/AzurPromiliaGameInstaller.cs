@@ -14,31 +14,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management;
 
-/// <summary>
-/// Installer for Azur Promilia.
-/// <para>
-/// Fresh installs follow the server's <c>downloadMode</c>: SLICE downloads numbered fragments into
-/// <c>_temp</c>, concatenates them into <c>game.zip</c> and extracts it; REALITY writes the final
-/// files straight into the game directory. Updates are always file-level, driven by the REALITY index,
-/// which is why a SLICE install also caches that index for later diffs.
-/// </para>
-/// </summary>
 [GeneratedComClass]
 internal partial class AzurPromiliaGameInstaller : GameInstallerBase
 {
-    /// <summary>Default number of concurrent file downloads.</summary>
     internal const int DefaultConcurrency = 4;
-
-    /// <summary>Concurrency used once a network error has been observed.</summary>
-    internal const int DegradedConcurrency = 2;
-
-    /// <summary>Concurrency used after repeated network errors.</summary>
-    internal const int MinimumConcurrency = 1;
-
-    /// <summary>Suffix of partially downloaded files.</summary>
     internal const string TempFileSuffix = ".~tmp";
-
-    /// <summary>Maximum number of per-file retries before the whole install is failed.</summary>
     internal const int MaxFileRetries = 4;
 
     private readonly HttpClient _downloadHttpClient;
@@ -50,7 +30,6 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
         _downloadHttpClient = new PluginHttpClientBuilder()
             .SetAllowedDecompression(DecompressionMethods.None)
             .AllowRedirections()
-            .AllowUntrustedCert()
             .SetTimeout(Timeout.InfiniteTimeSpan)
             .SetMaxConnection(32)
             .Create();
@@ -71,7 +50,7 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
         await InitAsync(token).ConfigureAwait(false);
 
         GameReleaseInfo? released = gameInstallerKind == GameInstallerKind.Preload
-            ? Manager.Preload ?? Manager.Released
+            ? Manager.Preload
             : Manager.Released;
 
         if (released == null)
@@ -79,15 +58,20 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
             return 0L;
         }
 
+        if (gameInstallerKind == GameInstallerKind.Preload)
+        {
+            var (total, _) = await new Install(this).GetPreloadSizesAsync(released, token).ConfigureAwait(false);
+            return total;
+        }
+
         if (released.PackageSize > 0)
         {
             return released.PackageSize;
         }
 
-        // Fall back to summing the index once it has been fetched.
         try
         {
-            (AzurPromiliaGameIndex? index, _) = await FetchRealityIndexAsync(released, token).ConfigureAwait(false);
+            AzurPromiliaGameIndex? index = await FetchRealityIndexAsync(released, token).ConfigureAwait(false);
             if (index == null)
             {
                 return 0L;
@@ -101,7 +85,7 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
 
             return total;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!token.IsCancellationRequested)
         {
             SharedStatic.InstanceLogger.LogWarning(
                 "[AzurPromiliaInstaller] Unable to determine the game size from the index: {Error}", ex.Message);
@@ -113,6 +97,17 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
         CancellationToken token)
     {
         await InitAsync(token).ConfigureAwait(false);
+
+        if (gameInstallerKind == GameInstallerKind.Preload)
+        {
+            if (Manager.Preload is not { } preload)
+            {
+                return 0L;
+            }
+
+            var (_, staged) = await new Install(this).GetPreloadSizesAsync(preload, token).ConfigureAwait(false);
+            return staged;
+        }
 
         GameManager.GetGamePath(out string? installPath);
         if (string.IsNullOrEmpty(installPath))
@@ -129,7 +124,7 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
         long downloaded = 0;
         foreach (AzurPromiliaLocalManifestFile file in manifest.Files)
         {
-            string localPath = Path.Combine(installPath!, file.Path.Replace('/', Path.DirectorySeparatorChar));
+            string localPath = GetContentPath(installPath, NormalizeIndexPath(file.Path));
             if (File.Exists(localPath))
             {
                 downloaded += new FileInfo(localPath).Length;
@@ -149,15 +144,11 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
 
     protected override Task StartPreloadAsyncInner(InstallProgressDelegate? progressDelegate,
         InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
-    {
-        // The server does not currently expose a pre-download endpoint for this title, so preloading
-        // behaves as a normal install of the preload version into the staging directory.
-        return new Install(this).RunAsync(GameInstallerKind.Preload, progressDelegate, progressStateDelegate,
-            token);
-    }
+        => new Install(this).RunAsync(GameInstallerKind.Preload, progressDelegate, progressStateDelegate, token);
 
     protected override Task UninstallAsyncInner(CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         GameManager.IsGameInstalled(out bool isInstalled);
         if (!isInstalled)
         {
@@ -170,55 +161,57 @@ internal partial class AzurPromiliaGameInstaller : GameInstallerBase
             return Task.CompletedTask;
         }
 
-        try
+        string fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installPath));
+        if (Path.GetPathRoot(fullPath) == fullPath)
         {
-            SharedStatic.InstanceLogger.LogInformation(
-                "[AzurPromiliaInstaller] Uninstalling from '{Path}'", installPath);
-            Directory.Delete(installPath!, true);
-        }
-        catch (Exception ex)
-        {
-            SharedStatic.InstanceLogger.LogError(
-                "[AzurPromiliaInstaller] Uninstall failed: {Error}", ex.Message);
+            throw new InvalidOperationException("A drive root cannot be uninstalled as a game directory.");
         }
 
+        SharedStatic.InstanceLogger.LogInformation("Uninstalling Azur Promilia from '{Path}'.", fullPath);
+        Directory.Delete(fullPath, true);
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Fetches and parses the REALITY (per-file) index for a release, returning the cached path too.
-    /// </summary>
-    internal async Task<(AzurPromiliaGameIndex? Index, string? Path)> FetchRealityIndexAsync(
+    private async Task<AzurPromiliaGameIndex?> FetchRealityIndexAsync(
         GameReleaseInfo release, CancellationToken token)
     {
         GamePackageInfo? package = release.GetPackage(AzurPromiliaGameManager.PackageTypeReality);
         if (package?.DownloadUrl == null || string.IsNullOrEmpty(release.VersionCode))
         {
-            return (null, null);
+            return null;
         }
 
         GameManager.GetGamePath(out string? installPath);
         if (string.IsNullOrEmpty(installPath))
         {
-            return (null, null);
+            return null;
         }
 
         string targetPath = AzurPromiliaGameManager.GetIndexPath(installPath!, release.VersionCode!);
-        AzurPromiliaGameIndex index = await Manager
+        return await Manager
             .LoadIndexAsync(package, targetPath, false, token)
             .ConfigureAwait(false);
-
-        return (index, targetPath);
     }
 
     internal HttpClient DownloadHttpClient => _downloadHttpClient;
 
-    /// <summary>
-    /// The effective channel configuration. Read through the game manager rather than kept as a field,
-    /// because the manager re-resolves it once the game directory (and with it <c>account.json</c>,
-    /// which may carry <c>launcherRoot</c>) becomes known.
-    /// </summary>
-    internal AzurPromiliaChannelConfig Channel => Manager.Channel;
+    internal static string NormalizeIndexPath(string path) => path.Replace('\\', '/').TrimStart('/');
+
+    internal static string GetContentPath(string directory, string relativePath)
+    {
+        string normalized = relativePath.Replace('\\', '/');
+        foreach (string component in normalized.Split('/'))
+        {
+            if (component.Length == 0 || component is "." or ".." ||
+                component.EndsWith('.') || component.EndsWith(' ') ||
+                component.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                throw new InvalidDataException($"Invalid relative path '{relativePath}'.");
+            }
+        }
+
+        return Path.Combine(directory, normalized.Replace('/', Path.DirectorySeparatorChar));
+    }
 
     public override void Dispose()
     {

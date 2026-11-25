@@ -1,0 +1,188 @@
+name: Release Azur Promilia
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Plugin version
+        type: string
+        required: true
+      publish_profile:
+        description: Publish profile
+        type: choice
+        default: ReleaseNoReflectionPublish-O1
+        options: [ReleaseNoReflectionPublish-O1, ReleaseNoReflectionPublish-O2, ReleasePublish-O1, ReleasePublish-O2, DebugPublish, DebugNoReflectionPublish]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Validate release plan and tags
+        id: plan
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $plan = & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Plan -Version $env:VERSION
+          foreach ($item in @($plan | ConvertFrom-Json)) {
+            & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Notes -Short $item.short -Version $item.version -Destination "$($item.short)-notes.md"
+          }
+
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish plugin
+        shell: pwsh
+        env:
+          PROJECT: ${{ matrix.item.name }}
+          VERSION: ${{ matrix.item.version }}
+          PROFILE: ${{ inputs.publish_profile }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet publish "$env:PROJECT/$env:PROJECT.csproj" -c ($env:PROFILE -replace "Publish.*$", "") -r win-x64 "-p:PublishProfile=$env:PROFILE" "-p:Version=$env:VERSION" -o publish_output
+          if ($LASTEXITCODE -ne 0) { throw 'Plugin publish failed.' }
+      - name: Retain debug symbols outside Git
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ matrix.item.short }}
+          path: publish_output/**/*.pdb
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Index runtime files
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath ./publish_output -Recurse -File -Filter '*.pdb' | Remove-Item -Force
+          & ./Indexer.exe ./publish_output
+          if ($LASTEXITCODE -ne 0) { throw 'Indexer failed.' }
+      - name: Stage and validate release payload
+        shell: pwsh
+        env:
+          SHORT: ${{ matrix.item.short }}
+          VERSION: ${{ matrix.item.version }}
+        run: |
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Stage -Short $env:SHORT -Source ./publish_output -Destination "./bundle/$env:SHORT"
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Notes -Short $env:SHORT -Version $env:VERSION -Destination ./bundle/notes.md
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: './bundle/**'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.item.short }}
+          path: ./bundle/
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      PLAN: ${{ needs.prepare.outputs.matrix }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: ./release-artifacts
+      - name: Checkout release repository once
+        uses: actions/checkout@v6
+        with:
+          repository: misaka10843/CollapsePlugin-ReleaseRepo
+          path: ./target-repo
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+      - name: Validate and synchronize all selected plugins
+        shell: pwsh
+        run: |
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Collect -Source ./release-artifacts -Destination ./target-repo -Plan $env:PLAN
+          $items = @($env:PLAN | ConvertFrom-Json)
+          $notes = foreach ($item in $items) { Get-Content -LiteralPath "./release-artifacts/release-$($item.short)/notes.md" -Raw }
+          [IO.File]::WriteAllText((Join-Path $PWD 'RELEASE_NOTES.md'), ($notes -join "`n`n"))
+          "RELEASE_TITLE=Release plugins: $(($items | ForEach-Object { "$($_.short) v$($_.version)" }) -join ', ')" >> $env:GITHUB_ENV
+      - name: Publish releases from the exact build commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action CheckTags -Plan $env:PLAN -Revision $env:SOURCE_SHA
+          foreach ($item in @($env:PLAN | ConvertFrom-Json)) {
+            $tag = "$($item.short)@v$($item.version)"
+            $notes = "./release-artifacts/release-$($item.short)/notes.md"
+            gh release view $tag *> $null
+            if ($LASTEXITCODE -eq 0) {
+              gh release edit $tag --notes-file $notes
+            } else {
+              gh release create $tag --target $env:SOURCE_SHA --title "$($item.short) v$($item.version)" --notes-file $notes
+            }
+            if ($LASTEXITCODE -ne 0) { throw "Cannot publish $tag" }
+            $files = @(Get-ChildItem -LiteralPath "./release-artifacts/release-$($item.short)/$($item.short)/build" -Filter '*.zip' -File | ForEach-Object FullName)
+            gh release upload $tag @files --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Cannot upload $tag assets" }
+          }
+      - name: Create one pull request for the complete release
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          path: ./target-repo
+          branch: azur-promilia-release-${{ github.run_id }}
+          base: main
+          title: ${{ env.RELEASE_TITLE }}
+          body-path: ./RELEASE_NOTES.md
+          commit-message: 'feat (release): update Azur Promilia package'
+          delete-branch: false
+      - name: Write back versions after successful distribution
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if ($env:REF_TYPE -ne 'branch') { Write-Host 'Tag build: no version writeback.'; exit 0 }
+          git fetch origin $env:SOURCE_BRANCH
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect source branch.' }
+          if ((git rev-parse FETCH_HEAD) -ne $env:SOURCE_SHA) { Write-Host 'Source branch advanced; skip version writeback.'; exit 0 }
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Bump -Plan $env:PLAN
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          foreach ($item in @($env:PLAN | ConvertFrom-Json)) { git add -- "$($item.name)/$($item.name).csproj" }
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m 'feat (release): bump plugin version [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Version commit failed.' }
+            git push origin "HEAD:refs/heads/$env:SOURCE_BRANCH"
+            if ($LASTEXITCODE -ne 0) { throw 'Version push failed; no force push attempted.' }
+          } elseif ($LASTEXITCODE -ne 0) { throw 'Cannot inspect version changes.' }

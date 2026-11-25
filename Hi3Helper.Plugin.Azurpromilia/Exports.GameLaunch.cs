@@ -17,15 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia;
 
-/// <summary>
-/// Game launch implementation.
-/// <para>
-/// <b>Critical:</b> the Azur Promilia client reads its login state exclusively from the
-/// <c>manjuu_user_info</c> and <c>manjuu_channel_info</c> environment variables — the command line
-/// carries no account information. Both variables must be set on the child process or the game starts
-/// signed out.
-/// </para>
-/// </summary>
 public partial class Exports
 {
     private const string EnvUserInfo = "manjuu_user_info";
@@ -153,7 +144,6 @@ public partial class Exports
             }
             catch (OperationCanceledException)
             {
-                // Ignored: the launcher only stops waiting.
             }
 
             return true;
@@ -186,7 +176,6 @@ public partial class Exports
         }
         catch
         {
-            // Non-fatal.
         }
 
         process.Kill();
@@ -259,7 +248,7 @@ public partial class Exports
             return false;
         }
 
-        string candidate = Path.Combine(gamePath!, executableName);
+        string candidate = AzurPromiliaGameInstaller.GetContentPath(gamePath, executableName);
 
         if (!File.Exists(candidate))
         {
@@ -300,9 +289,10 @@ public partial class Exports
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
 
-        ProcessStartInfo startInfo = new(executablePath!)
+        context.GameManager.GetGamePath(out string? gamePath);
+        ProcessStartInfo startInfo = new(executablePath)
         {
-            WorkingDirectory = Path.GetDirectoryName(executablePath)!,
+            WorkingDirectory = gamePath!,
             UseShellExecute = false,
             CreateNoWindow = false
         };
@@ -312,17 +302,13 @@ public partial class Exports
             startInfo.ArgumentList.Add(argument);
         }
 
-        // The client obtains its session solely from these two variables.
-        InjectLoginEnvironment(context, startInfo);
+        InjectLaunchEnvironment(context, startInfo);
 
         process = new Process { StartInfo = startInfo };
         return true;
     }
 
-    /// <summary>
-    /// Populates <c>manjuu_user_info</c> and <c>manjuu_channel_info</c> on the child process.
-    /// </summary>
-    private static void InjectLoginEnvironment(GameManagerExtension.RunGameFromGameManagerContext context,
+    private static void InjectLaunchEnvironment(GameManagerExtension.RunGameFromGameManagerContext context,
         ProcessStartInfo startInfo)
     {
         string userInfo = "{}";
@@ -330,20 +316,8 @@ public partial class Exports
 
         try
         {
-            if (context.GameManager is AzurPromiliaGameManager manager)
+            if (context.GameManager is AzurPromiliaGameManager)
             {
-                if (manager.Session != null)
-                {
-                    userInfo = BuildUserInfoJson(manager.Session.Uid, manager.Session.UToken,
-                        manager.Session.AccountType);
-                }
-                else
-                {
-                    SharedStatic.InstanceLogger.LogWarning(
-                        "[AzurPromilia::LaunchGame] No session is available; the game will start signed out. " +
-                        "Provide credentials through the plugin's account.json file to enable login.");
-                }
-
                 if (context.PresetConfig is AzurPromiliaCnPresetConfig presetConfig)
                 {
                     channelInfo = BuildChannelInfoJson(presetConfig.ChannelConfig);
@@ -353,7 +327,7 @@ public partial class Exports
         catch (Exception ex)
         {
             SharedStatic.InstanceLogger.LogError(
-                "[AzurPromilia::LaunchGame] Failed to build the login environment: {Error}", ex);
+                "[AzurPromilia::LaunchGame] Failed to build the launch environment: {Error}", ex);
         }
 
         startInfo.Environment[EnvUserInfo] = userInfo;
@@ -364,33 +338,16 @@ public partial class Exports
             EnvUserInfo, EnvChannelInfo);
     }
 
-    private static string BuildUserInfoJson(string? uid, string? uToken, int accountType)
-    {
-        using MemoryStream stream = new();
-        using (System.Text.Json.Utf8JsonWriter writer = new(stream))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("uid", uid ?? string.Empty);
-            writer.WriteString("utoken", uToken ?? string.Empty);
-            writer.WriteNumber("accountType", accountType);
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
     private static string BuildChannelInfoJson(Utils.AzurPromiliaChannelConfig channelConfig)
     {
-        (string subChannelCode, string traceId) = Utils.AzurPromiliaDeviceInfo.TryReadDeliveryInfo(null);
-
         using MemoryStream stream = new();
         using (System.Text.Json.Utf8JsonWriter writer = new(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("channelCode", channelConfig.ChannelCode);
-            writer.WriteString("subChannelCode", subChannelCode);
-            writer.WriteString("initTraceId", traceId);
-            writer.WriteString("currentTraceId", traceId);
+            writer.WriteString("subChannelCode", channelConfig.SubChannelCode);
+            writer.WriteString("initTraceId", channelConfig.TraceId);
+            writer.WriteString("currentTraceId", channelConfig.TraceId);
             writer.WriteString("previousTraceId", string.Empty);
             writer.WriteEndObject();
         }
@@ -399,10 +356,6 @@ public partial class Exports
     }
 
     #endregion
-
-    /// <summary>
-    /// Tails the game's log file and forwards each line to the launcher's log console.
-    /// </summary>
     private static async Task ReadGameLog(GameManagerExtension.RunGameFromGameManagerContext context,
         CancellationToken token)
     {

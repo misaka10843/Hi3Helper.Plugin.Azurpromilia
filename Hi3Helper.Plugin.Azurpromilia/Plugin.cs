@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia;
 
-/// <summary>
-/// Plugin metadata and preset registration.
-/// </summary>
 [GeneratedComClass]
 public partial class AzurPromiliaPlugin : PluginBase
 {
@@ -21,9 +18,6 @@ public partial class AzurPromiliaPlugin : PluginBase
         new AzurPromiliaCnPresetConfig()
     ];
 
-    // NOTE: intentionally not 'readonly' — GetPluginCreationDate has to hand out a raw pointer to
-    // this value, and C# forbids taking the address of a static readonly field (CS0199). The host
-    // reads the value synchronously inside the call, so a 'fixed' pointer is safe here.
     private static DateTime PluginCreationDate = new(2026, 09, 15, 00, 00, 0, DateTimeKind.Utc);
 
     public override void GetPluginName(out string result)

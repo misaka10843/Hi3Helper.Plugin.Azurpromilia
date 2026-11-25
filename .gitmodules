@@ -3,4 +3,4 @@
 	url = https://github.com/CollapseLauncher/Hi3Helper.Plugin.Core.git
 [submodule "SevenZipExtractor"]
 	path = SevenZipExtractor
-	url = https://github.com/CollapseLauncher/SevenZipExtractor.git
+	url = https://github.com/CollapseLauncher/SevenZipExtractor

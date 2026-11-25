@@ -18,7 +18,6 @@ Artifacts/
 *.ni.exe
 
 ## Collapse plugin catalog indexer (external tool, bring your own copy)
-Indexer.exe
 
 ## Rider / VS Code
 .idea/

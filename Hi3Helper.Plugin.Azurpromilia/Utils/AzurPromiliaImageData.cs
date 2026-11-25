@@ -2,25 +2,9 @@ using System;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Utils;
 
-/// <summary>
-/// Embedded artwork handed to the launcher through
-/// <c>IPlugin.GetPluginAppIconUrl</c> / <c>GetNotificationPosterUrl</c>.
-/// <para>
-/// The icon is a 256x256 PNG (a four-point sparkle on a navy-to-blue gradient) generated for this
-/// plugin. It is embedded as Base64 text rather than a resource stream so the value is available
-/// without any AOT-hostile resource lookup.
-/// </para>
-/// <para>
-/// Replace <see cref="AzurPromiliaAppIconData"/> with your own artwork by base64-encoding a PNG and
-/// pasting the result here.
-/// </para>
-/// </summary>
 public static class AzurPromiliaImageData
 {
-    /// <summary>Base64 of the plugin's 256x256 PNG app icon.</summary>
     public static byte[] AzurPromiliaAppIconData => Convert.FromBase64String(IconBase64);
-
-    /// <summary>Base64 of the notification poster. Reuses the app icon.</summary>
     public static byte[] AzurPromiliaPosterData => AzurPromiliaAppIconData;
 
     private const string IconBase64 =

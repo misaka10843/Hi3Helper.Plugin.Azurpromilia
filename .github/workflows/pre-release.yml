@@ -1,0 +1,152 @@
+name: Pre-Release Azur Promilia
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Plugin version
+        type: string
+        required: true
+      publish_profile:
+        description: Publish profile
+        type: choice
+        default: ReleaseNoReflectionPublish-O1
+        options: [ReleaseNoReflectionPublish-O1, ReleaseNoReflectionPublish-O2, ReleasePublish-O1, ReleasePublish-O2, DebugPublish, DebugNoReflectionPublish]
+      release_tag:
+        description: Rolling tag (pre-release or pre-release-suffix)
+        type: string
+        default: pre-release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-prerelease
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - id: plan
+        name: Validate release plan
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+          ROLLING_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ($env:ROLLING_TAG -notmatch '^pre-release([._-][A-Za-z0-9._-]+)?$') { throw 'Use a dedicated pre-release tag.' }
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Plan -Version $env:VERSION
+
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish plugin
+        shell: pwsh
+        env:
+          PROJECT: ${{ matrix.item.name }}
+          VERSION: ${{ matrix.item.version }}
+          PROFILE: ${{ inputs.publish_profile }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          dotnet publish "$env:PROJECT/$env:PROJECT.csproj" -c ($env:PROFILE -replace "Publish.*$", "") -r win-x64 "-p:PublishProfile=$env:PROFILE" "-p:Version=$env:VERSION" -o publish_output
+          if ($LASTEXITCODE -ne 0) { throw 'Plugin publish failed.' }
+      - name: Retain debug symbols separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbols-${{ matrix.item.short }}
+          path: publish_output/**/*.pdb
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Index runtime files
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath ./publish_output -Recurse -File -Filter '*.pdb' | Remove-Item -Force
+          & ./Indexer.exe ./publish_output
+          if ($LASTEXITCODE -ne 0) { throw 'Indexer failed.' }
+      - name: Stage payload and changelog
+        shell: pwsh
+        env:
+          SHORT: ${{ matrix.item.short }}
+          VERSION: ${{ matrix.item.version }}
+        run: |
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Stage -Short $env:SHORT -Source ./publish_output -Destination "./bundle/$env:SHORT"
+          & ./.github/scripts/Invoke-PluginRelease.ps1 -Action Notes -Short $env:SHORT -Version $env:VERSION -Destination ./bundle/notes.md
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: './bundle/**'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.item.short }}
+          path: ./bundle/
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PLAN: ${{ needs.prepare.outputs.matrix }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: ./release-artifacts
+      - name: Combine selected changelogs
+        shell: pwsh
+        run: |
+          $notes = foreach ($item in @($env:PLAN | ConvertFrom-Json)) { Get-Content -LiteralPath "./release-artifacts/release-$($item.short)/notes.md" -Raw }
+          [IO.File]::WriteAllText((Join-Path $PWD 'RELEASE_NOTES.md'), ($notes -join "`n`n"))
+      - name: Replace dedicated rolling release
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^pre-release([._-][A-Za-z0-9._-]+)?$') { throw 'Invalid rolling tag.' }
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $env:RELEASE_TAG --yes --cleanup-tag
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot remove previous rolling release.' }
+          }
+          git ls-remote --exit-code origin "refs/tags/$env:RELEASE_TAG" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            git push origin ":refs/tags/$env:RELEASE_TAG"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot remove stale rolling tag.' }
+          } elseif ($LASTEXITCODE -ne 2) { throw 'Cannot inspect rolling tag.' }
+          $global:LASTEXITCODE = 0
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: Azur Promilia Pre-Release
+          body_path: ./RELEASE_NOTES.md
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: ./release-artifacts/release-*/*/build/*.zip

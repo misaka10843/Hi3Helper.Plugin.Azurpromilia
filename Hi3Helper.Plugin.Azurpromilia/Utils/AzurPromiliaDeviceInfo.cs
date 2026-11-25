@@ -12,33 +12,17 @@ using Microsoft.Win32;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Utils;
 
-/// <summary>
-/// Reproduces the device fingerprint and request headers the official launcher sends.
-/// <para>
-/// The single most important value here is <c>device_id</c> = <c>md5(MachineGuid)</c>: it is used both as
-/// the <c>device-id</c> header and as the key/IV material that protects the launcher's saved login token.
-/// </para>
-/// </summary>
 [SupportedOSPlatform("windows")]
 public static class AzurPromiliaDeviceInfo
 {
-    private const string LauncherAppVersion = "0.6.2.2";
+    private const string LauncherAppVersion = "1.0.2.2";
     private const string DefaultCountry = "CN";
 
     private static readonly Lazy<string> MachineId = new(ComputeMachineId);
     private static readonly Lazy<string> OperatingSystemName = new(ReadOperatingSystemName);
     private static readonly Lazy<string> OperatingSystemVersion = new(ReadOperatingSystemVersion);
     private static readonly Lazy<string> NetworkType = new(DetectNetworkType);
-
-    /// <summary>
-    /// <c>md5(MachineGuid)</c>, a 32 character lowercase hex string.
-    /// </summary>
     public static string DeviceId => MachineId.Value;
-
-    /// <summary>
-    /// Reads <c>HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid</c> and hashes it.
-    /// Falls back to a deterministic hash of the machine name when the value is unavailable.
-    /// </summary>
     private static string ComputeMachineId()
     {
         string? machineGuid = null;
@@ -65,14 +49,7 @@ public static class AzurPromiliaDeviceInfo
         return AzurPromiliaCrypto.Md5Hex(machineGuid);
     }
 
-    /// <summary>
-    /// The launcher-visible operating system name, e.g. <c>Windows 11 Pro Version 23H2</c>.
-    /// </summary>
     public static string OperatingSystemNameValue => OperatingSystemName.Value;
-
-    /// <summary>
-    /// The launcher-visible operating system build, e.g. <c>10.0.22631.4460</c>.
-    /// </summary>
     public static string OperatingSystemVersionValue => OperatingSystemVersion.Value;
 
     private static string ReadOperatingSystemName()
@@ -126,9 +103,6 @@ public static class AzurPromiliaDeviceInfo
         return $"{version.Major}.{version.Minor}.{build}";
     }
 
-    /// <summary>
-    /// The device language with any script subtag stripped, e.g. <c>zh-Hans</c> becomes <c>zh</c>.
-    /// </summary>
     public static string DeviceLanguage
     {
         get
@@ -144,9 +118,6 @@ public static class AzurPromiliaDeviceInfo
         }
     }
 
-    /// <summary>
-    /// The device region, e.g. <c>CN</c>.
-    /// </summary>
     public static string DeviceCountry
     {
         get
@@ -169,9 +140,6 @@ public static class AzurPromiliaDeviceInfo
         }
     }
 
-    /// <summary>
-    /// The current UTC offset rendered as <c>UTC+08:00</c>, matching the launcher's formatting.
-    /// </summary>
     public static string DeviceTimezone
     {
         get
@@ -184,9 +152,6 @@ public static class AzurPromiliaDeviceInfo
         }
     }
 
-    /// <summary>
-    /// <c>WiFi</c> when a wireless adapter is up, otherwise <c>Ethernet</c>.
-    /// </summary>
     public static string NetworkTypeValue => NetworkType.Value;
 
     private static string DetectNetworkType()
@@ -216,17 +181,9 @@ public static class AzurPromiliaDeviceInfo
         return "Ethernet";
     }
 
-    /// <summary>
-    /// The user agent advertised by the launcher's requests.
-    /// </summary>
     public static string UserAgent { get; } =
         $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
         $"AzurPromilia/{LauncherAppVersion} Chrome/120.0.0.0 Safari/537.36";
-
-    /// <summary>
-    /// Serialises the <c>grp-client-info</c> header value.
-    /// </summary>
-    /// <param name="traceId">Current trace id, taken from <c>delyinfo.json</c> when present.</param>
     public static string BuildClientInfoJson(string traceId = "")
     {
         using var stream = new MemoryStream();
@@ -256,13 +213,6 @@ public static class AzurPromiliaDeviceInfo
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    /// <summary>
-    /// Reads the launcher's <c>delyinfo.json</c> attribution file if present, returning its
-    /// <c>sub_channel_code</c> and <c>current_trace_id</c>.
-    /// </summary>
-    /// <param name="launcherAppDataPath">
-    /// The launcher's <c>AppData</c> directory (the one containing <c>delyinfo.json</c>).
-    /// </param>
     public static (string SubChannelCode, string TraceId) TryReadDeliveryInfo(string? launcherAppDataPath)
     {
         const string defaultSubChannel = "SC000";
@@ -303,14 +253,6 @@ public static class AzurPromiliaDeviceInfo
         }
     }
 
-    /// <summary>
-    /// Builds the static (non-signed) portion of the request headers. The per-request
-    /// <c>timestamp</c> / <c>sign</c> headers are added by <see cref="AzurPromiliaApiHelper"/>.
-    /// </summary>
-    /// <param name="channelConfig">Channel configuration supplying the app/channel codes.</param>
-    /// <param name="subChannelCode">Attribution sub-channel code.</param>
-    /// <param name="traceId">Current trace id.</param>
-    /// <param name="uToken">Login token, or <c>null</c> while signed out.</param>
     public static Dictionary<string, string> BuildBaseHeaders(AzurPromiliaChannelConfig channelConfig,
         string subChannelCode, string traceId, string? uToken)
     {
@@ -331,8 +273,4 @@ public static class AzurPromiliaDeviceInfo
         };
     }
 
-    /// <summary>
-    /// The launcher version string reported through <c>sdk-version</c> and friends.
-    /// </summary>
-    public static string AppVersion => LauncherAppVersion;
 }

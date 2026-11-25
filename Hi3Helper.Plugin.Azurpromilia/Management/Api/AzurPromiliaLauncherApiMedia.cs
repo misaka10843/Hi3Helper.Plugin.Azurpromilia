@@ -15,13 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management.Api;
 
-/// <summary>
-/// Launcher background / logo provider, backed by <c>getNews</c>.
-/// <para>
-/// The server publishes a <c>mediaContentMap</c> keyed by content id:
-/// <c>"1"</c> = background image, <c>"3"</c> = logo, <c>"12"</c> = home background video.
-/// </para>
-/// </summary>
 [GeneratedComClass]
 public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
 {
@@ -50,7 +43,6 @@ public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
             .SetAllowedDecompression(DecompressionMethods.None)
             .AllowCookies()
             .AllowRedirections()
-            .AllowUntrustedCert()
             .Create();
         set;
     }
@@ -191,7 +183,6 @@ public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
         }
         catch (Exception ex)
         {
-            // Background art is decorative: a failure must not break the launcher.
             SharedStatic.InstanceLogger.LogWarning(
                 "[AzurPromiliaMedia] Background download failed for '{Url}': {Error}", fileUrl, ex.Message);
         }
