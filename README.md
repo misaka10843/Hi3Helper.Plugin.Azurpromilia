@@ -17,6 +17,15 @@ A third-party plugin for [Collapse Launcher](https://collapselauncher.com/) on W
 > [!IMPORTANT]
 > Please report plugin issues in this repository so the maintainer can investigate them directly.
 
+## Support Regions
+
+- [x] Mainland China
+- [x] Bilibili
+- [ ] KR (I cant download the launcher)
+- [x] JP (Yostar)
+- [x] Global
+- [ ] SEA (wait release)
+
 ## ✨ Features
 
 - **Version detection** checks the installed client against the published version.
