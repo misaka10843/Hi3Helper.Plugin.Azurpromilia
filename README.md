@@ -35,25 +35,6 @@ Use the Windows x64 edition of Collapse Launcher with plugin support. A recent v
 3. **Add and apply** using **Click to add .zip or manifest.json**. Select the ZIP, then restart Collapse Launcher.
 4. **Select Azur Promilia** and choose the game installation directory.
 
-## 🛠️ Build from Source
-
-Install the .NET 10 SDK and Visual Studio's **Desktop development with C++** workload for Native AOT.
-
-```powershell
-git submodule update --init --recursive
-dotnet build Hi3Helper.Plugin.Azurpromilia.sln -c Release -p:Platform=x64
-dotnet publish Hi3Helper.Plugin.Azurpromilia -c ReleaseNoReflection -r win-x64 -p:PublishProfile=ReleaseNoReflectionPublish-O1 -o publish_output
-Get-ChildItem publish_output -Filter *.pdb -Recurse -File | Remove-Item
-./Indexer.exe ./publish_output
-```
-
-Run the regression checks with the commands below. The live check reads official package indexes, verifies a small CDN file, and checks the launcher content.
-
-```powershell
-dotnet run --project tests/PublicDownloadTests -c Release
-dotnet run --project tests/PublicDownloadTests -c Release -- --live
-```
-
 ## ⚠️ Disclaimer
 
 This is an independent open-source project with no affiliation with Manjuu or Collapse Launcher.

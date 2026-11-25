@@ -35,25 +35,6 @@
 3. **添加并应用**。点击 **添加 .zip 或 manifest.json**，选择插件 ZIP，然后重启启动器。
 4. **选择《蓝色星原：旅谣》**，并设置游戏安装目录。
 
-## 🛠️ 从源码构建
-
-安装 .NET 10 SDK。Native AOT 发布还需要 Visual Studio 的 **使用 C++ 的桌面开发**工作负载。
-
-```powershell
-git submodule update --init --recursive
-dotnet build Hi3Helper.Plugin.Azurpromilia.sln -c Release -p:Platform=x64
-dotnet publish Hi3Helper.Plugin.Azurpromilia -c ReleaseNoReflection -r win-x64 -p:PublishProfile=ReleaseNoReflectionPublish-O1 -o publish_output
-Get-ChildItem publish_output -Filter *.pdb -Recurse -File | Remove-Item
-./Indexer.exe ./publish_output
-```
-
-使用以下命令运行回归检查。在线检查会读取官方包索引，校验一个 CDN 小文件，并检查启动器内容。
-
-```powershell
-dotnet run --project tests/PublicDownloadTests -c Release
-dotnet run --project tests/PublicDownloadTests -c Release -- --live
-```
-
 ## ⚠️ 免责声明
 
 本项目是独立的第三方开源插件，与蛮啾网络及 Collapse Launcher 官方无隶属关系。
