@@ -15,7 +15,15 @@ public partial class AzurPromiliaPlugin : PluginBase
 {
     private static readonly IPluginPresetConfig[] PresetConfigInstances =
     [
-        new AzurPromiliaCnPresetConfig()
+        new AzurPromiliaPresetConfig(),
+        new AzurPromiliaPresetConfig(AzurPromiliaChannelConfig.Bilibili, "AzurPromiliaBilibili", "Bilibili",
+            "蓝色星原：旅谣 (哔哩哔哩)", "zh-CN", "Chinese", "Azur Promilia Bilibili"),
+        new AzurPromiliaPresetConfig(AzurPromiliaChannelConfig.Global, "AzurPromiliaGlobal", "Global",
+            "Azur Promilia (Global)", "en-US", "English", "Azur Promilia Global"),
+        new AzurPromiliaPresetConfig(AzurPromiliaChannelConfig.Default, "AzurPromiliaJapan", "Japan",
+            "アズールプロミリア (日本)", "ja-JP", "Japanese", "Azur Promilia Japan",
+            new Yostar.YostarLauncherOptions("AZUPRO_JP", "https://api-launcher-jp.yo-star.com",
+                "AZUPRO_JP", "AzurPromiliaJP.exe"))
     ];
 
     private static DateTime PluginCreationDate = new(2026, 09, 15, 00, 00, 0, DateTimeKind.Utc);

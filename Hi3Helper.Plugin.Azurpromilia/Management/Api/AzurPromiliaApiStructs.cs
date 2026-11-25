@@ -14,7 +14,6 @@ public class AzurPromiliaResponse<T>
 }
 
 
-#region /pc-launcher/client/gameversion/packageconfig + /gameversion/config
 public class GameVersionConfigData
 {
     [JsonPropertyName("released")] public GameReleaseInfo? Released { get; set; }
@@ -91,9 +90,7 @@ public class GameExcludedFile
     [JsonPropertyName("fileType")] public int FileType { get; set; }
 }
 
-#endregion
 
-#region /pc-launcher/client/gameversion/pre/check
 public class GameExeInfoData
 {
     [JsonPropertyName("launchEntry")] public string? LaunchEntry { get; set; }
@@ -101,9 +98,7 @@ public class GameExeInfoData
     [JsonPropertyName("launchParams")] public string? LaunchParams { get; set; }
 }
 
-#endregion
 
-#region /pc-launcher/client/launcher/contentconfig
 public class NewsConfigData
 {
     [JsonPropertyName("mediaContentMap")] public Dictionary<string, List<MediaContentEntry>>? MediaContentMap { get; set; }
@@ -145,11 +140,9 @@ public class MediaContentEntry
             : null;
 }
 
-#endregion
 
 
 
-#region Local bookkeeping
 public class AzurPromiliaLocalManifest
 {
     [JsonPropertyName("versionCode")] public string? VersionCode { get; set; }
@@ -168,5 +161,3 @@ public class AzurPromiliaLocalManifestFile
 
     [JsonPropertyName("md5")] public string? Md5 { get; set; }
 }
-
-#endregion

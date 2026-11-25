@@ -38,6 +38,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="icon.png" LogicalName="AzurPromilia.Icon.png"/>
     <ProjectReference Include="..\Hi3Helper.Plugin.Core\Hi3Helper.Plugin.Core.csproj"/>
     <ProjectReference Include="..\SevenZipExtractor\SevenZipExtractor\SevenZipExtractor.csproj"/>
   </ItemGroup>

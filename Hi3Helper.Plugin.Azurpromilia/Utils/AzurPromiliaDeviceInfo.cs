@@ -267,7 +267,7 @@ public static class AzurPromiliaDeviceInfo
             ["sdk-version"] = LauncherAppVersion,
             ["channel-sdk-version"] = LauncherAppVersion,
             ["grp-launcher-version-code"] = LauncherAppVersion,
-            ["lang"] = "zh-Hans",
+            ["lang"] = channelConfig.ApiLanguage,
             ["grp-client-info"] = BuildClientInfoJson(traceId),
             ["utoken"] = uToken ?? string.Empty
         };

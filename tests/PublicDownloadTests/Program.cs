@@ -10,6 +10,12 @@ using System.Threading.Tasks;
 using Hi3Helper.Plugin.AzurPromilia.Management;
 using Hi3Helper.Plugin.AzurPromilia.Management.Api;
 using Hi3Helper.Plugin.AzurPromilia.Utils;
+using Hi3Helper.Plugin.AzurPromilia;
+using Hi3Helper.Plugin.AzurPromilia.Yostar.Api;
+using Hi3Helper.Plugin.AzurPromilia.Yostar.Management;
+using Hi3Helper.Plugin.AzurPromilia.Yostar.Utility;
+using Hi3Helper.Plugin.Core.Management;
+using Hi3Helper.Plugin.AzurPromilia.Management.PresetConfig;
 
 [assembly: SupportedOSPlatform("windows")]
 
@@ -29,11 +35,89 @@ if (await manager.InitAsyncInner() != 0 || manager.Released?.VersionCode != "1.0
 Console.WriteLine("PASS: public version/package, preload fallback and launch discovery without credentials.");
 await PreloadScenario.RunAsync();
 LauncherContentScenario.Run();
+var plugin = new AzurPromiliaPlugin();
+foreach ((string locale, string expected) in new[]
+         {
+             ("zh-cn", "zh-Hant"), ("zh_TW", "zh-Hant"), ("en-us", "en"), ("ja-jp", "en")
+         })
+{
+    plugin.SetPluginLocaleId(locale);
+    string globalLanguage = AzurPromiliaDeviceInfo.BuildBaseHeaders(AzurPromiliaChannelConfig.Global, "", "", null)["lang"];
+    if (globalLanguage != expected ||
+        AzurPromiliaDeviceInfo.BuildBaseHeaders(AzurPromiliaChannelConfig.Default, "", "", null)["lang"] != "zh-Hans" ||
+        AzurPromiliaDeviceInfo.BuildBaseHeaders(AzurPromiliaChannelConfig.Bilibili, "", "", null)["lang"] != "zh-Hans")
+    {
+        throw new InvalidOperationException($"Unexpected launcher API language for {locale}.");
+    }
+}
+plugin.SetPluginLocaleId(args.SkipWhile(arg => arg != "--locale").Skip(1).FirstOrDefault() ?? "en-us");
+plugin.GetPresetConfigCount(out int presetCount);
+if (presetCount != 4)
+{
+    throw new InvalidOperationException("Expected one preset per supported region.");
+}
+plugin.GetPresetConfig(3, out var japanPreset);
+var japanConfig = (AzurPromiliaPresetConfig)japanPreset;
+var japan = (YostarGameManager)japanConfig.GameManager!;
+
+if (args.Contains("--live-jp"))
+{
+    using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(60));
+    YostarTargetPackage target = await japan.RefreshTargetPackageAsync(timeout.Token);
+    YostarManifestFile sample = target.Manifest.Files.Where(file => file.SizeValue > 0).MinBy(file => file.SizeValue)
+        ?? throw new InvalidDataException("The Japanese manifest contains no downloadable files.");
+    Uri sampleUri = YostarGameInstaller.BuildDownloadUri(target.Cdn.PrimaryCdn!, target.Manifest.Source, sample.Path);
+    string path = Path.GetTempFileName();
+    try
+    {
+        byte[] data = await japan.ApiClient.DownloadHttpClient.GetByteArrayAsync(sampleUri, timeout.Token);
+        await File.WriteAllBytesAsync(path, data, timeout.Token);
+        if (data.LongLength != sample.SizeValue ||
+            await YostarCrc64.ComputeFileAsync(path, timeout.Token) != sample.Hash ||
+            !string.Equals(japan.ExecutableName, "AzurPromiliaJP.exe", StringComparison.OrdinalIgnoreCase) ||
+            !japan.LaunchParameters.Contains("-start=azurpromilia_launcher"))
+        {
+            throw new InvalidDataException("The live Japanese package or launch configuration failed verification.");
+        }
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+    Console.WriteLine($"PASS: Japan {target.Config.LatestVersion}, {target.Manifest.Files.Count} files, CDN CRC64 and launch metadata.");
+    string planDirectory = Directory.CreateTempSubdirectory("azur-japan-plan-").FullName;
+    try
+    {
+        japan.SetGamePath(planDirectory);
+        var sizeQuery = typeof(YostarGameInstaller).GetMethod("GetGameSizeAsyncInner",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var size = (Task<long>)sizeQuery.Invoke(japanConfig.GameInstaller,
+            [GameInstallerKind.Install, timeout.Token])!;
+        if (await size != target.Manifest.Files.Sum(file => file.SizeValue))
+        {
+            throw new InvalidDataException("The Japanese installer plan did not cover the complete manifest.");
+        }
+    }
+    finally
+    {
+        japan.SetGamePath(string.Empty);
+        Directory.Delete(planDirectory, true);
+    }
+    var background = await japan.ApiClient.GetBaseConfigAsync(timeout.Token);
+    var operations = await japan.ApiClient.GetOperationsResourceAsync(timeout.Token);
+    var social = await japan.ApiClient.GetSocialMediaResourceAsync(timeout.Token);
+    Console.WriteLine($"PASS: Japan launcher content, background={background.LauncherBackgroundImg != null}, banners={operations.Banners?.Count ?? 0}, social={social != null}.");
+}
 
 if (args.Contains("--live"))
 {
     string? launcherRoot = args.SkipWhile(arg => arg != "--launcher-root").Skip(1).FirstOrDefault();
-    AzurPromiliaChannelConfig channelConfig = AzurPromiliaChannelConfig.Resolve(launcherRoot);
+    AzurPromiliaChannelConfig channelConfig = args.SkipWhile(arg => arg != "--region").Skip(1).FirstOrDefault() switch
+    {
+        "bilibili" => AzurPromiliaChannelConfig.Bilibili,
+        "global" => AzurPromiliaChannelConfig.Global,
+        _ => AzurPromiliaChannelConfig.Resolve(launcherRoot)
+    };
     AzurPromiliaGameManager liveManager = new("AzurPromilia.exe", channelConfig);
     using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(45));
     int result = await liveManager.InitAsyncInner(token: timeout.Token);
@@ -50,6 +134,7 @@ if (args.Contains("--live"))
         throw new Exception("The live API did not publish an anonymous download package.");
     }
     Console.WriteLine("PASS: live anonymous package discovery.");
+    Console.WriteLine($"Manjuu launch entry: {liveManager.LaunchEntry ?? "(not published)"}");
     var liveApiClient = liveManager.ApiClient!;
     NewsConfigData? content = await liveApiClient.GetAsync(liveApiClient.BaseDomains,
         "/pc-launcher/client/launcher/contentconfig", new() { ["launcherId"] = liveApiClient.Channel.LauncherId },

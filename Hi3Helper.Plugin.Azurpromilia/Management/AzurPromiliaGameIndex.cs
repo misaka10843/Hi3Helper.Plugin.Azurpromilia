@@ -104,7 +104,6 @@ public sealed class AzurPromiliaGameIndex
             int newline = csv.IndexOf('\n', position);
             int end = newline < 0 ? length : newline;
 
-            // Drop the carriage return of a CRLF pair (and any stray trailing CRs).
             while (end > position && csv[end - 1] == '\r')
             {
                 end--;

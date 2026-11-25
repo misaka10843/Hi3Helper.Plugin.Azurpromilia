@@ -24,11 +24,11 @@ public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
     private const string MediaKeyBackground = "1";
     private const string MediaKeyVideo = "12";
 
-    private readonly AzurPromiliaCnPresetConfig _presetConfig;
+    private readonly AzurPromiliaPresetConfig _presetConfig;
 
     private string[] _backgroundPaths = [];
 
-    public AzurPromiliaLauncherApiMedia(AzurPromiliaCnPresetConfig presetConfig)
+    public AzurPromiliaLauncherApiMedia(AzurPromiliaPresetConfig presetConfig)
     {
         _presetConfig = presetConfig;
     }

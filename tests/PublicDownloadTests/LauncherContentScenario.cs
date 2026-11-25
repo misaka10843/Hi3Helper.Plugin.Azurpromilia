@@ -12,7 +12,7 @@ internal static class LauncherContentScenario
 {
     internal static void Run()
     {
-        var news = new AzurPromiliaLauncherApiNews(new AzurPromiliaCnPresetConfig());
+        var news = new AzurPromiliaLauncherApiNews(new AzurPromiliaPresetConfig());
         news.SetContent(new NewsConfigData
         {
             TxtContentMap = new()
@@ -55,7 +55,7 @@ internal static class LauncherContentScenario
 
     internal static async Task VerifyLiveAsync(NewsConfigData? content, CancellationToken token)
     {
-        var preset = new AzurPromiliaCnPresetConfig();
+        var preset = new AzurPromiliaPresetConfig();
         var news = new AzurPromiliaLauncherApiNews(preset);
         var media = new AzurPromiliaLauncherApiMedia(preset);
         news.SetContent(content);
@@ -66,7 +66,9 @@ internal static class LauncherContentScenario
         using var social = PluginDisposableMemoryExtension.ToManagedSpan<LauncherSocialMediaEntry>(news.GetSocialMediaEntries);
         using var backgrounds = PluginDisposableMemoryExtension.ToManagedSpan<LauncherPathEntry>(media.GetBackgroundEntries);
         using var logos = PluginDisposableMemoryExtension.ToManagedSpan<LauncherPathEntry>(media.GetLogoOverlayEntries);
-        Require(entries.Length > 0 && carousel.Length > 0 && social.Length > 0 && backgrounds.Length > 0,
+        Require(carousel.Length > 0 && backgrounds.Length > 0 &&
+                (content?.TxtContentMap?.Count is not > 0 || entries.Length > 0) &&
+                (content?.MediaContentMap?.ContainsKey("11") != true || social.Length > 0),
             "Official content did not produce valid launcher entries.");
         if (content?.MediaContentMap?.TryGetValue("12", out var videos) == true &&
             videos.Exists(entry => MediaContentEntry.WebUrl(entry.Video) != null))

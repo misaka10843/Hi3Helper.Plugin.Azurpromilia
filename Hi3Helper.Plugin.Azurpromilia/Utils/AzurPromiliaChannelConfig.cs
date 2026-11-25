@@ -27,6 +27,61 @@ public sealed class AzurPromiliaChannelConfig
         ChannelCode = "C000",
         SecretKey = "20bccb31-fb57-4683-b6d8-6314d43811f2"
     };
+    internal static AzurPromiliaChannelConfig Bilibili { get; } = new()
+    {
+        LauncherId = "741e8ecd27934b5bb8c1e77ca148d4a8",
+        GameId = Default.GameId,
+        AppId = Default.AppId,
+        ChannelCode = "C001",
+        SecretKey = Default.SecretKey
+    };
+
+    internal static AzurPromiliaChannelConfig Global { get; } = new()
+    {
+        LauncherId = "1a3ee4447516436a9ec4b5d1ec1635e2",
+        GameId = "43",
+        AppId = "434",
+        ChannelCode = "C500",
+        SecretKey = "13236ff1-87c6-4331-9175-7b7bcaba7942"
+    };
+
+    internal string ApiLanguage
+    {
+        get
+        {
+            if (ChannelCode != "C500")
+            {
+                return "zh-Hans";
+            }
+
+            string locale = SharedStatic.PluginLocaleCode;
+            return locale.Equals("zh", StringComparison.OrdinalIgnoreCase) ||
+                   locale.StartsWith("zh-", StringComparison.OrdinalIgnoreCase) ||
+                   locale.StartsWith("zh_", StringComparison.OrdinalIgnoreCase)
+                ? "zh-Hant"
+                : "en";
+        }
+    }
+
+    internal IReadOnlyList<string> ApiDomains => ChannelCode == "C500"
+        ? ["https://api-grp-rgn1.jimi-global.com", "https://l2-api-grp-rgn1.jimi-global.com"]
+        : ["https://api-grp.manjuu.com", "https://api-grp-l2.manjuu.com"];
+
+    internal static AzurPromiliaChannelConfig ResolveForChannel(AzurPromiliaChannelConfig fallback)
+    {
+        foreach (string root in EnumerateLauncherRootCandidates(fallback))
+        {
+            if (TryLoadFromLauncherRoot(root, out AzurPromiliaChannelConfig? detected, out _) &&
+                detected!.GameId == fallback.GameId && detected.AppId == fallback.AppId &&
+                detected.ChannelCode == fallback.ChannelCode)
+            {
+                return detected;
+            }
+        }
+
+        return fallback;
+    }
+
     public string UninstallRegistryKeyName => $"AzurPromilia_{GameId}_{ChannelCode}";
     public string UninstallRegistryPath =>
         $@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{UninstallRegistryKeyName}";
@@ -143,7 +198,7 @@ public sealed class AzurPromiliaChannelConfig
 
     public static string? DetectLauncherRoot()
     {
-        foreach (string candidate in EnumerateLauncherRootCandidates())
+        foreach (string candidate in EnumerateLauncherRootCandidates(Default))
         {
             if (string.IsNullOrEmpty(candidate))
             {
@@ -159,9 +214,8 @@ public sealed class AzurPromiliaChannelConfig
         return null;
     }
 
-    private static IEnumerable<string> EnumerateLauncherRootCandidates()
+    private static IEnumerable<string> EnumerateLauncherRootCandidates(AzurPromiliaChannelConfig channel)
     {
-        // 1) Uninstall registry entry written by the official launcher.
         foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
         {
             string? installLocation = null;
@@ -169,7 +223,7 @@ public sealed class AzurPromiliaChannelConfig
             try
             {
                 using RegistryKey? baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
-                using RegistryKey? subKey = baseKey.OpenSubKey(Default.UninstallRegistryPath);
+                using RegistryKey? subKey = baseKey.OpenSubKey(channel.UninstallRegistryPath);
                 installLocation = subKey?.GetValue("InstallLocation") as string;
                 displayIcon = subKey?.GetValue("DisplayIcon") as string;
             }
@@ -190,7 +244,6 @@ public sealed class AzurPromiliaChannelConfig
             }
         }
 
-        // 2) Conventional install locations.
         string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
         string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

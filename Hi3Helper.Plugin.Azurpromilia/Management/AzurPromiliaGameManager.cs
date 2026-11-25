@@ -52,7 +52,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
             AzurPromiliaDeviceInfo.UserAgent);
     }
 
-    #region Published state
     internal GameReleaseInfo? Released => _released;
     internal GameReleaseInfo? Preload => _preload;
     internal int DownloadMode { get; private set; } = DownloadModeSlice;
@@ -60,11 +59,9 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     internal string? LaunchParams { get; private set; }
     internal AzurPromiliaApiClient? ApiClient => _apiClient;
 
-    #endregion
 
     protected override HttpClient ApiResponseHttpClient { get; set; }
 
-    #region GameManagerBase overrides
 
     protected override bool IsInstalled
     {
@@ -139,9 +136,7 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
 
     protected override Task<int> InitAsync(CancellationToken token) => InitAsyncInner(true, token);
 
-    #endregion
 
-    #region Initialisation
     internal async Task<int> InitAsyncInner(bool forceInit = false, CancellationToken token = default)
     {
         if (!forceInit && _isInitialized)
@@ -361,9 +356,7 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    #endregion
 
-    #region Index download & parsing
     internal async Task DownloadIndexAsync(GamePackageInfo package, string targetPath, CancellationToken token)
     {
         if (string.IsNullOrEmpty(package.DownloadUrl))
@@ -451,9 +444,7 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
     internal static string GetSliceTempPath(string gamePath)
         => Path.Combine(gamePath, "_temp");
 
-    #endregion
 
-    #region Local manifest
     internal AzurPromiliaLocalManifest? ReadLocalManifest(string installPath)
     {
         string path = Path.Combine(installPath, "_index", LocalManifestFileName);
@@ -533,7 +524,6 @@ internal partial class AzurPromiliaGameManager : GameManagerBase
         }
     }
 
-    #endregion
 
     public override void Dispose()
     {

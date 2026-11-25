@@ -185,7 +185,6 @@ public partial class Exports
         return true;
     }
 
-    #region Process helpers
 
     private static Process? FindExecutableProcess(string? executablePath)
     {
@@ -233,7 +232,7 @@ public partial class Exports
 
         if (context is not
             {
-                GameManager: AzurPromiliaGameManager manager,
+                GameManager: { } manager,
                 PresetConfig: PluginPresetConfigBase presetConfig
             })
         {
@@ -275,12 +274,15 @@ public partial class Exports
 
         List<string> arguments = new();
 
-        // The server's launch parameters come first, then anything the launcher appended.
         if (context.GameManager is AzurPromiliaGameManager manager &&
             !string.IsNullOrWhiteSpace(manager.LaunchParams))
         {
             arguments.AddRange(manager.LaunchParams!
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        else if (context.GameManager is Yostar.Management.YostarGameManager yostar)
+        {
+            arguments.AddRange(yostar.LaunchParameters);
         }
 
         if (!string.IsNullOrWhiteSpace(startArgument))
@@ -302,7 +304,10 @@ public partial class Exports
             startInfo.ArgumentList.Add(argument);
         }
 
-        InjectLaunchEnvironment(context, startInfo);
+        if (context.GameManager is AzurPromiliaGameManager)
+        {
+            InjectLaunchEnvironment(context, startInfo);
+        }
 
         process = new Process { StartInfo = startInfo };
         return true;
@@ -318,7 +323,7 @@ public partial class Exports
         {
             if (context.GameManager is AzurPromiliaGameManager)
             {
-                if (context.PresetConfig is AzurPromiliaCnPresetConfig presetConfig)
+                if (context.PresetConfig is AzurPromiliaPresetConfig presetConfig)
                 {
                     channelInfo = BuildChannelInfoJson(presetConfig.ChannelConfig);
                 }
@@ -355,7 +360,6 @@ public partial class Exports
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    #endregion
     private static async Task ReadGameLog(GameManagerExtension.RunGameFromGameManagerContext context,
         CancellationToken token)
     {

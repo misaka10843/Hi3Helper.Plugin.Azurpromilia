@@ -21,13 +21,13 @@ namespace Hi3Helper.Plugin.AzurPromilia.Management.Api;
 [GeneratedComClass]
 public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
 {
-    private readonly AzurPromiliaCnPresetConfig _presetConfig;
+    private readonly AzurPromiliaPresetConfig _presetConfig;
 
     private (MediaContentEntry Entry, LauncherNewsEntryType Type)[] _news = [];
     private MediaContentEntry[] _carousel = [];
     private MediaContentEntry[] _social = [];
 
-    public AzurPromiliaLauncherApiNews(AzurPromiliaCnPresetConfig presetConfig)
+    public AzurPromiliaLauncherApiNews(AzurPromiliaPresetConfig presetConfig)
     {
         _presetConfig = presetConfig;
     }

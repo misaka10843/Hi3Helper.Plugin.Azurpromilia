@@ -129,7 +129,6 @@ internal partial class AzurPromiliaGameInstaller
                 "[AzurPromiliaInstaller] {Kind} finished for version {Version}.", kind, release.VersionCode);
         }
 
-        #region SLICE install: fragments -> game.zip -> extract
         private async Task RunSliceInstallAsync(GameReleaseInfo release, string installPath,
             InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate,
             CancellationToken token)
@@ -157,7 +156,6 @@ internal partial class AzurPromiliaGameInstaller
             string gameZipPath = Path.Combine(tempPath, "game.zip");
             bool archiveReady = false;
 
-            // Reuse an already-merged archive when its hash still matches.
             if (File.Exists(gameZipPath) && new FileInfo(gameZipPath).Length == index.GameZipSize)
             {
                 progressStateDelegate?.Invoke(InstallProgressState.Verify);
@@ -288,7 +286,6 @@ internal partial class AzurPromiliaGameInstaller
                     output.Flush(true); // force the data out of the OS cache before hashing
                 }
 
-                // Verify the merged archive before it replaces game.zip.
                 string mergedMd5 = await AzurPromiliaCrypto.Md5FileAsync(tempZipPath, null, token)
                     .ConfigureAwait(false);
 
@@ -373,9 +370,7 @@ internal partial class AzurPromiliaGameInstaller
             Manager.WriteLocalManifest(installPath, release, index, token);
         }
 
-        #endregion
 
-        #region REALITY install / update: per-file download
         private async Task RunFileInstallAsync(GameReleaseInfo release, string installPath, bool isFreshInstall,
             GameInstallerKind kind, InstallProgressDelegate? progressDelegate,
             InstallProgressStateDelegate? progressStateDelegate, CancellationToken token)
@@ -676,9 +671,7 @@ internal partial class AzurPromiliaGameInstaller
             progressDelegate?.Invoke(in verifyProgress);
         }
 
-        #endregion
 
-        #region Download engine
         private async Task DownloadFilesAsync(List<DownloadItem> items,
             InstallProgressDelegate? progressDelegate, InstallProgressStateDelegate? progressStateDelegate,
             CancellationToken token)
@@ -904,7 +897,6 @@ internal partial class AzurPromiliaGameInstaller
             progressDelegate?.Invoke(in progress);
         }
 
-        #endregion
 
         private static void TryDeleteDirectory(string path)
         {

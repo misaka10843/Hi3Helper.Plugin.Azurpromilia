@@ -18,7 +18,6 @@ public static class AzurPromiliaCrypto
     private static readonly byte[] ResourceIndexKeyBytes = Encoding.UTF8.GetBytes(ResourceIndexKeyLiteral);
     private static readonly byte[] ResourceIndexIvBytes = Encoding.UTF8.GetBytes(ResourceIndexIvLiteral);
 
-    #region extApi1 - app_config.dat
     public static string DecryptAppConfig(string configPath)
     {
         byte[] raw = File.ReadAllBytes(configPath);
@@ -40,20 +39,16 @@ public static class AzurPromiliaCrypto
         return Encoding.UTF8.GetString(plain);
     }
 
-    #endregion
 
 
-    #region extApi3 - request signing
     public static string ComputeSignature(string payload, string appId, string channelCode, string secretKey)
     {
         string concatenated = payload + appId + channelCode + secretKey;
         return Md5Hex(concatenated);
     }
 
-    #endregion
 
 
-    #region Resource index cipher
     public static string DecryptResourceIndex(string indexText)
     {
         // The launcher feeds the file text straight into Buffer.from(raw, 'base64').
@@ -66,9 +61,7 @@ public static class AzurPromiliaCrypto
     public static string DecryptResourceIndexFromFile(string indexPath)
         => DecryptResourceIndex(File.ReadAllText(indexPath));
 
-    #endregion
 
-    #region Hashing helpers
     public static string Md5Hex(string value)
         => Md5Hex(Encoding.UTF8.GetBytes(value));
     public static string Md5Hex(ReadOnlySpan<byte> data)
@@ -136,9 +129,7 @@ public static class AzurPromiliaCrypto
         }
     }
 
-    #endregion
 
-    #region Raw AES-CBC primitives
     internal static byte[] AesCbcDecrypt(ReadOnlySpan<byte> key, ReadOnlySpan<byte> iv,
         ReadOnlySpan<byte> cipherText)
     {
@@ -152,5 +143,4 @@ public static class AzurPromiliaCrypto
         return decryptor.TransformFinalBlock(cipherText.ToArray(), 0, cipherText.Length);
     }
 
-    #endregion
 }

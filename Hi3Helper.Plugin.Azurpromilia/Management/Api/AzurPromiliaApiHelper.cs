@@ -36,10 +36,10 @@ public sealed class AzurPromiliaApiClient : IDisposable
         _subChannelCode = subChannelCode;
         _traceId = traceId;
 
-        BaseDomains = new List<string> { "https://api-grp.manjuu.com", "https://api-grp-l2.manjuu.com" };
+        BaseDomains = channel.ApiDomains;
     }
 
-    public List<string> BaseDomains { get; set; }
+    public IReadOnlyList<string> BaseDomains { get; }
     public AzurPromiliaChannelConfig Channel => _channel;
     public void SetSubChannelCode(string subChannelCode)
     {
@@ -51,7 +51,6 @@ public sealed class AzurPromiliaApiClient : IDisposable
 
     public void SetTraceId(string traceId) => _traceId = traceId ?? string.Empty;
 
-    #region Request plumbing
     internal static string BuildCanonicalQuery(IReadOnlyDictionary<string, string?> data)
     {
         if (data.Count == 0)
@@ -158,7 +157,6 @@ public sealed class AzurPromiliaApiClient : IDisposable
         {
             string url = BuildUrl(domain, path, data);
 
-            // Same-host retry once, then rotate to the next domain.
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 try
@@ -188,7 +186,6 @@ public sealed class AzurPromiliaApiClient : IDisposable
 
                     if (envelope.Code != 0)
                     {
-                        // Business-level failure: surface it without retrying on another domain.
                         throw new AzurPromiliaApiException(envelope.Code, envelope.Msg ?? "unknown error", path);
                     }
 
@@ -245,7 +242,6 @@ public sealed class AzurPromiliaApiClient : IDisposable
         _httpClient.Dispose();
     }
 
-    #endregion
 }
 public sealed class AzurPromiliaApiException : Exception
 {

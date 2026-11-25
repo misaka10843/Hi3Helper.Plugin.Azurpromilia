@@ -9,19 +9,44 @@ using Hi3Helper.Plugin.AzurPromilia.Utils;
 using Hi3Helper.Plugin.Core.Management;
 using Hi3Helper.Plugin.Core.Management.Api;
 using Hi3Helper.Plugin.Core.Management.PresetConfig;
+using Hi3Helper.Plugin.AzurPromilia.Yostar;
+using Hi3Helper.Plugin.AzurPromilia.Yostar.Api;
+using Hi3Helper.Plugin.AzurPromilia.Yostar.Management;
 
 namespace Hi3Helper.Plugin.AzurPromilia.Management.PresetConfig;
 
 [GeneratedComClass]
-public partial class AzurPromiliaCnPresetConfig : PluginPresetConfigBase
+public partial class AzurPromiliaPresetConfig : PluginPresetConfigBase
 {
     private const string FallbackExecutableName = "AzurPromilia.exe";
 
     private const string ZoneHomePage = "https://www.azurpromilia.com/";
 
+    private readonly AzurPromiliaChannelConfig _fallback;
+    private readonly YostarLauncherOptions? _yostarOptions;
+
+    public AzurPromiliaPresetConfig()
+        : this(AzurPromiliaChannelConfig.Default, "AzurPromiliaCn", "Mainland China",
+            "蓝色星原：旅谣 (中国大陆)", "zh-CN", "Chinese", "Azur Promilia")
+    {
+    }
+
+    internal AzurPromiliaPresetConfig(AzurPromiliaChannelConfig channel, string profile, string zone,
+        string fullName, string language, string supportedLanguage, string directory, YostarLauncherOptions? yostar = null)
+    {
+        _fallback = channel;
+        _yostarOptions = yostar;
+        ProfileName = profile;
+        ZoneName = zone;
+        ZoneFullName = fullName;
+        GameMainLanguage = language;
+        SupportedLanguages = [supportedLanguage];
+        LauncherGameDirectoryName = directory;
+    }
+
     private AzurPromiliaChannelConfig? _channelConfig;
     internal AzurPromiliaChannelConfig ChannelConfig =>
-        _channelConfig ??= AzurPromiliaChannelConfig.Resolve();
+        _channelConfig ??= AzurPromiliaChannelConfig.ResolveForChannel(_fallback);
 
     [field: AllowNull] [field: MaybeNull] public override string GameName => field ??= "Azur Promilia";
     public override string GameExecutableName
@@ -32,6 +57,11 @@ public partial class AzurPromiliaCnPresetConfig : PluginPresetConfigBase
                 !string.IsNullOrEmpty(manager.LaunchEntry))
             {
                 return manager.LaunchEntry!;
+            }
+
+            if (GameManager is YostarGameManager yostar)
+            {
+                return yostar.ExecutableName;
             }
 
             return FallbackExecutableName;
@@ -53,16 +83,16 @@ public partial class AzurPromiliaCnPresetConfig : PluginPresetConfigBase
 
     [field: AllowNull] [field: MaybeNull] public override string GameRegistryKeyName => field ??= "AzurPromilia";
 
-    [field: AllowNull] [field: MaybeNull] public override string ProfileName => field ??= "AzurPromiliaCn";
+    public override string ProfileName { get; }
 
     [field: AllowNull]
     [field: MaybeNull]
     public override string ZoneDescription =>
         field ??= "《蓝色星原：旅谣》是一款由蛮啾网络开发的开放世界动作角色扮演游戏。";
 
-    [field: AllowNull] [field: MaybeNull] public override string ZoneName => field ??= "Mainland China";
+    public override string ZoneName { get; }
 
-    [field: AllowNull] [field: MaybeNull] public override string ZoneFullName => field ??= "蓝色星原：旅谣 (中国大陆)";
+    public override string ZoneFullName { get; }
 
     [field: AllowNull] [field: MaybeNull] public override string ZoneLogoUrl => field ??= string.Empty;
 
@@ -72,35 +102,41 @@ public partial class AzurPromiliaCnPresetConfig : PluginPresetConfigBase
 
     public override GameReleaseChannel ReleaseChannel => GameReleaseChannel.Public;
 
-    [field: AllowNull] [field: MaybeNull] public override string GameMainLanguage => field ??= "zh-CN";
+    public override string GameMainLanguage { get; }
 
-    [field: AllowNull]
-    [field: MaybeNull]
-    public override string LauncherGameDirectoryName => field ??= "Azur Promilia";
+    public override string LauncherGameDirectoryName { get; }
 
-    [field: AllowNull] [field: MaybeNull] public override List<string> SupportedLanguages => field ??= ["Chinese"];
+    public override List<string> SupportedLanguages { get; }
 
     public override ILauncherApiMedia? LauncherApiMedia
     {
-        get => field ??= new AzurPromiliaLauncherApiMedia(this);
+        get => field ??= _yostarOptions is { } options
+            ? new YostarLauncherApiMedia(options)
+            : new AzurPromiliaLauncherApiMedia(this);
         set;
     }
 
     public override ILauncherApiNews? LauncherApiNews
     {
-        get => field ??= new AzurPromiliaLauncherApiNews(this);
+        get => field ??= _yostarOptions is { } options
+            ? new YostarLauncherApiNews(options)
+            : new AzurPromiliaLauncherApiNews(this);
         set;
     }
 
     public override IGameManager? GameManager
     {
-        get => field ??= new AzurPromiliaGameManager(FallbackExecutableName, ChannelConfig);
+        get => field ??= _yostarOptions is { } options
+            ? new YostarGameManager(options)
+            : new AzurPromiliaGameManager(FallbackExecutableName, ChannelConfig);
         set;
     }
 
     public override IGameInstaller? GameInstaller
     {
-        get => field ??= new AzurPromiliaGameInstaller(GameManager!);
+        get => field ??= _yostarOptions != null
+            ? new YostarGameInstaller(GameManager)
+            : new AzurPromiliaGameInstaller(GameManager!);
         set;
     }
 
