@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices.Marshalling;
@@ -20,15 +21,11 @@ namespace Hi3Helper.Plugin.AzurPromilia.Management.Api;
 [GeneratedComClass]
 public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
 {
-    private static readonly HashSet<string> CarouselContentIds = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "2", "4", "5", "6", "7", "8", "9", "10", "11"
-    };
-
     private readonly AzurPromiliaCnPresetConfig _presetConfig;
 
-    private readonly List<MediaContentEntry> _news = new();
-    private readonly List<MediaContentEntry> _carousel = new();
+    private (MediaContentEntry Entry, LauncherNewsEntryType Type)[] _news = [];
+    private MediaContentEntry[] _carousel = [];
+    private MediaContentEntry[] _social = [];
 
     public AzurPromiliaLauncherApiNews(AzurPromiliaCnPresetConfig presetConfig)
     {
@@ -72,75 +69,44 @@ public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
                     AzurPromiliaApiContext.Default.AzurPromiliaResponseNewsConfigData, token)
                 .ConfigureAwait(false);
 
-            _news.Clear();
-            _carousel.Clear();
-
-            if (data?.TxtContentMap != null)
-            {
-                foreach (KeyValuePair<string, List<MediaContentEntry>> pair in data.TxtContentMap)
-                {
-                    if (pair.Value == null)
-                    {
-                        continue;
-                    }
-
-                    foreach (MediaContentEntry entry in pair.Value)
-                    {
-                        if (CarouselContentIds.Contains(pair.Key) && !string.IsNullOrEmpty(entry.Image))
-                        {
-                            _carousel.Add(entry);
-                        }
-                        else
-                        {
-                            _news.Add(entry);
-                        }
-                    }
-                }
-            }
-
-            // Fall back to the promotional banner slots when no dedicated carousel content exists.
-            if (_carousel.Count == 0 && data?.MediaContentMap != null)
-            {
-                foreach (KeyValuePair<string, List<MediaContentEntry>> pair in data.MediaContentMap)
-                {
-                    if (pair.Key is "1" or "3" or "12" || pair.Value == null)
-                    {
-                        continue;
-                    }
-
-                    foreach (MediaContentEntry entry in pair.Value)
-                    {
-                        if (!string.IsNullOrEmpty(entry.Image))
-                        {
-                            _carousel.Add(entry);
-                        }
-                    }
-                }
-            }
-
-            SharedStatic.InstanceLogger.LogInformation(
-                "[AzurPromiliaNews] Loaded {News} news item(s) and {Carousel} carousel item(s).",
-                _news.Count, _carousel.Count);
-
+            SetContent(data);
             return 0;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!token.IsCancellationRequested)
         {
             SharedStatic.InstanceLogger.LogError("[AzurPromiliaNews] Initialisation failed: {Error}", ex);
             return -1;
         }
     }
 
+    internal void SetContent(NewsConfigData? data)
+    {
+        _news = Entries(data?.TxtContentMap, "1").Select(entry => (entry, LauncherNewsEntryType.Info))
+            .Concat(Entries(data?.TxtContentMap, "2").Select(entry => (entry, LauncherNewsEntryType.Notice)))
+            .Concat(Entries(data?.TxtContentMap, "3").Select(entry => (entry, LauncherNewsEntryType.Event)))
+            .Where(item => !string.IsNullOrWhiteSpace(item.entry.Title ?? item.entry.Content))
+            .ToArray();
+        _carousel = Entries(data?.MediaContentMap, "2")
+            .Where(entry => MediaContentEntry.WebUrl(entry.Image) != null).ToArray();
+        _social = Entries(data?.MediaContentMap, "11")
+            .Where(entry => MediaContentEntry.WebUrl(entry.Icon) != null &&
+                            (MediaContentEntry.WebUrl(entry.Image) != null || entry.ClickUrl != null)).ToArray();
+    }
+
+    private static IEnumerable<MediaContentEntry> Entries(Dictionary<string, List<MediaContentEntry>>? map, string key)
+        => map?.GetValueOrDefault(key)?.OrderBy(entry => entry.Sort) ?? Enumerable.Empty<MediaContentEntry>();
+
     public override void GetNewsEntries(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)
     {
-        if (_news.Count == 0)
+        var news = _news;
+        if (news.Length == 0)
         {
             InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
             return;
         }
 
-        count = _news.Count;
+        count = news.Length;
 
         PluginDisposableMemory<LauncherNewsEntry> memory = PluginDisposableMemory<LauncherNewsEntry>.Alloc(count);
         handle = memory.AsSafePointer();
@@ -149,26 +115,27 @@ public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
 
         for (int i = 0; i < count; i++)
         {
-            MediaContentEntry item = _news[i];
+            (MediaContentEntry item, LauncherNewsEntryType type) = news[i];
 
             string title = item.Title ?? item.Content ?? string.Empty;
-            string link = item.Link ?? item.JumpUrl ?? item.Url ?? string.Empty;
-            string date = FormatDate(item.PublishTime ?? item.StartTime) ?? string.Empty;
+            string link = item.ClickUrl ?? string.Empty;
+            string date = item.PublishDate ?? FormatDate(item.PublishTime ?? item.StartTime) ?? string.Empty;
 
-            memory[i].Write(title, null, link, date, LauncherNewsEntryType.Info);
+            memory[i].Write(title, null, link, date, type);
         }
     }
 
     public override void GetCarouselEntries(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)
     {
-        if (_carousel.Count == 0)
+        MediaContentEntry[] carousel = _carousel;
+        if (carousel.Length == 0)
         {
             InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
             return;
         }
 
-        count = _carousel.Count;
+        count = carousel.Length;
 
         PluginDisposableMemory<LauncherCarouselEntry> memory =
             PluginDisposableMemory<LauncherCarouselEntry>.Alloc(count);
@@ -178,14 +145,46 @@ public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
 
         for (int i = 0; i < count; i++)
         {
-            MediaContentEntry item = _carousel[i];
-            memory[i].Write(item.Title ?? item.Content, item.Image, item.Link ?? item.JumpUrl ?? item.Url);
+            MediaContentEntry item = carousel[i];
+            memory[i].Write(item.Title ?? item.Content, MediaContentEntry.WebUrl(item.Image), item.ClickUrl);
         }
     }
 
     public override void GetSocialMediaEntries(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)
-        => InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
+    {
+        MediaContentEntry[] social = _social;
+        if (social.Length == 0)
+        {
+            InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
+            return;
+        }
+
+        count = social.Length;
+        PluginDisposableMemory<LauncherSocialMediaEntry> memory =
+            PluginDisposableMemory<LauncherSocialMediaEntry>.Alloc(count);
+        handle = memory.AsSafePointer();
+        isDisposable = true;
+        isAllocated = true;
+
+        for (int i = 0; i < count; i++)
+        {
+            MediaContentEntry item = social[i];
+            string? qr = MediaContentEntry.WebUrl(item.Image);
+            memory[i].WriteIcon(MediaContentEntry.WebUrl(item.Icon));
+            memory[i].WriteDescription(item.Title);
+            memory[i].WriteClickUrl(item.ClickUrl);
+            if (qr != null)
+            {
+                memory[i].WriteQrImage(qr);
+                memory[i].WriteQrImageDescription(item.Title);
+            }
+
+            // Core's writers also set unrelated bits. Publish only the flags for supplied data.
+            memory[i].Flags = LauncherSocialMediaEntryFlag.IconIsPath |
+                              (qr == null ? LauncherSocialMediaEntryFlag.None : LauncherSocialMediaEntryFlag.QrImageIsPath);
+        }
+    }
     private static string? FormatDate(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -210,21 +209,11 @@ public partial class AzurPromiliaLauncherApiNews : LauncherApiNewsBase
             : value;
     }
 
-    protected override async Task DownloadAssetAsyncInner(HttpClient? client, string fileUrl, Stream outputStream,
+    protected override Task DownloadAssetAsyncInner(HttpClient? client, string fileUrl, Stream outputStream,
         PluginDisposableMemory<byte> fileChecksum, PluginFiles.FileReadProgressDelegate? downloadProgress,
         CancellationToken token)
-    {
-        try
-        {
-            await base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum,
-                downloadProgress, token).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            SharedStatic.InstanceLogger.LogWarning(
-                "[AzurPromiliaNews] Asset download failed for '{Url}': {Error}", fileUrl, ex.Message);
-        }
-    }
+        => base.DownloadAssetAsyncInner(ApiDownloadHttpClient, fileUrl, outputStream, fileChecksum,
+            downloadProgress, token);
 
     private static void InitializeEmpty(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)

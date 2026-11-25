@@ -125,9 +125,24 @@ public class MediaContentEntry
 
     [JsonPropertyName("jumpUrl")] public string? JumpUrl { get; set; }
 
+    [JsonPropertyName("linkUrl")] public string? LinkUrl { get; set; }
+
+    [JsonPropertyName("icon")] public string? Icon { get; set; }
+
+    [JsonPropertyName("sort")] public int Sort { get; set; }
+
+    [JsonPropertyName("publishDate")] public string? PublishDate { get; set; }
+
     [JsonPropertyName("startTime")] public string? StartTime { get; set; }
 
     [JsonPropertyName("publishTime")] public string? PublishTime { get; set; }
+
+    internal string? ClickUrl => WebUrl(LinkUrl) ?? WebUrl(Link) ?? WebUrl(JumpUrl) ?? WebUrl(Url);
+
+    internal static string? WebUrl(string? value)
+        => Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) && uri.Scheme is "https" or "http"
+            ? uri.AbsoluteUri
+            : null;
 }
 
 #endregion

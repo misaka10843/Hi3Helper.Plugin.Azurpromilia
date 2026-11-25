@@ -28,6 +28,7 @@ if (await manager.InitAsyncInner() != 0 || manager.Released?.VersionCode != "1.0
 }
 Console.WriteLine("PASS: public version/package, preload fallback and launch discovery without credentials.");
 await PreloadScenario.RunAsync();
+LauncherContentScenario.Run();
 
 if (args.Contains("--live"))
 {
@@ -49,6 +50,11 @@ if (args.Contains("--live"))
         throw new Exception("The live API did not publish an anonymous download package.");
     }
     Console.WriteLine("PASS: live anonymous package discovery.");
+    var liveApiClient = liveManager.ApiClient!;
+    NewsConfigData? content = await liveApiClient.GetAsync(liveApiClient.BaseDomains,
+        "/pc-launcher/client/launcher/contentconfig", new() { ["launcherId"] = liveApiClient.Channel.LauncherId },
+        AzurPromiliaApiContext.Default.AzurPromiliaResponseNewsConfigData, timeout.Token);
+    await LauncherContentScenario.VerifyLiveAsync(content, timeout.Token);
     using HttpClient httpForCdn = new();
     foreach (GameReleaseInfo release in new[] { liveManager.Released, liveManager.Preload }.OfType<GameReleaseInfo>())
     foreach (int packageType in new[] { 1, 2 })
