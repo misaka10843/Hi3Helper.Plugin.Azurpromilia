@@ -22,13 +22,11 @@ namespace Hi3Helper.Plugin.AzurPromilia.Management.Api;
 public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
 {
     private const string MediaKeyBackground = "1";
-    private const string MediaKeyLogo = "3";
     private const string MediaKeyVideo = "12";
 
     private readonly AzurPromiliaCnPresetConfig _presetConfig;
 
     private string[] _backgroundPaths = [];
-    private string? _logoPath;
 
     public AzurPromiliaLauncherApiMedia(AzurPromiliaCnPresetConfig presetConfig)
     {
@@ -95,11 +93,10 @@ public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
         var map = data?.MediaContentMap;
         Task<string?> image = CacheMediaAsync(FindMedia(MediaKeyBackground, entry => entry.Image), ".png", token);
         Task<string?> video = CacheMediaAsync(FindMedia(MediaKeyVideo, entry => entry.Video), ".mp4", token);
-        Task<string?> logo = CacheMediaAsync(FindMedia(MediaKeyLogo, entry => entry.Image), ".png", token);
-        await Task.WhenAll(image, video, logo).ConfigureAwait(false);
+        await Task.WhenAll(image, video).ConfigureAwait(false);
 
-        _logoPath = await logo.ConfigureAwait(false);
-        _backgroundPaths = new[] { await image.ConfigureAwait(false), await video.ConfigureAwait(false) }
+        // Collapse selects the first background when no preference has been saved.
+        _backgroundPaths = new[] { await video.ConfigureAwait(false), await image.ConfigureAwait(false) }
             .OfType<string>().ToArray();
         return;
 
@@ -196,34 +193,12 @@ public partial class AzurPromiliaLauncherApiMedia : LauncherApiMediaBase
                 : LauncherBackgroundFlag.TypeIsImage));
     }
 
-    public override void GetLogoFlag(out LauncherBackgroundFlag result)
-    {
-        result = string.IsNullOrEmpty(_logoPath)
-            ? LauncherBackgroundFlag.None
-            : LauncherBackgroundFlag.TypeIsImage | LauncherBackgroundFlag.IsSourceFile;
-    }
+    public override void GetLogoFlag(out LauncherBackgroundFlag result) => result = LauncherBackgroundFlag.None;
 
+    // Collapse treats overlays as full-frame artwork. The official logo is a standalone badge.
     public override void GetLogoOverlayEntries(out nint handle, out int count, out bool isDisposable,
         out bool isAllocated)
-    {
-        string? logo = _logoPath;
-        count = _backgroundPaths.Length;
-        if (logo == null || count == 0)
-        {
-            InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
-            return;
-        }
-
-        PluginDisposableMemory<LauncherPathEntry> memory = PluginDisposableMemory<LauncherPathEntry>.Alloc(count);
-        for (int i = 0; i < count; i++)
-        {
-            memory[i].Write(logo, Span<byte>.Empty);
-        }
-
-        handle = memory.AsSafePointer();
-        isDisposable = true;
-        isAllocated = true;
-    }
+        => InitializeEmpty(out handle, out count, out isDisposable, out isAllocated);
 
     public override void GetBackgroundSpriteFps(out float result) => result = 60f;
 

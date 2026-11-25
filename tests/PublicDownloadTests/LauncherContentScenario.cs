@@ -68,6 +68,12 @@ internal static class LauncherContentScenario
         using var logos = PluginDisposableMemoryExtension.ToManagedSpan<LauncherPathEntry>(media.GetLogoOverlayEntries);
         Require(entries.Length > 0 && carousel.Length > 0 && social.Length > 0 && backgrounds.Length > 0,
             "Official content did not produce valid launcher entries.");
+        if (content?.MediaContentMap?.TryGetValue("12", out var videos) == true &&
+            videos.Exists(entry => MediaContentEntry.WebUrl(entry.Video) != null))
+        {
+            Require(Path.GetExtension(backgrounds[0].Path) is ".mp4" or ".webm",
+                "The official video must be the first selectable background.");
+        }
         Console.WriteLine($"PASS: live content exported {entries.Length} news, {carousel.Length} banners, {social.Length} social entries.");
         for (int i = 0; i < backgrounds.Length; i++)
         {
@@ -75,8 +81,7 @@ internal static class LauncherContentScenario
             Require(path != null && File.Exists(new Uri(path).LocalPath), "Background did not survive the host URI round trip.");
             Console.WriteLine($"Verified background: {path}");
         }
-        Require(logos.Length == 0 || (logos.Length == backgrounds.Length &&
-                File.Exists(new Uri(logos[0].Path!).LocalPath)), "Logo paths do not match the exported backgrounds.");
+        Require(logos.Length == 0, "The standalone logo must not be exported as a full-frame overlay.");
         news.Dispose();
         media.Dispose();
     }
